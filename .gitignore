@@ -1,0 +1,32 @@
+# Environnements Python
+venv/
+.env/
+.venv/
+env/
+*.pyc
+__pycache__/
+
+# Données volumineuses / privées
+data/episodes_raw/
+data/audio_raw/
+data/audio_stems/
+data/dub_audio/
+data/episodes_dubbed/
+data/diarization/
+data/transcripts/
+data/segments/
+data/speaker_bank/
+data/voices/
+
+# Logs / sorties temporaires
+logs/
+*.log
+
+# VSCode / IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
