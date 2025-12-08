@@ -87,16 +87,22 @@ anime-dub/
 │  ├─ 06_assign_characters.py
 │  ├─ 07_synthesize_xtts.py
 │  ├─ 08_mix_audio.py
-│  └─ batch_process.py
+│  ├─ 09_remux.py
+│  └─ gui_pipeline.py        # GUI pour orchestrer les étapes 01→09
 └─ config/
    ├─ paths.yaml
    ├─ characters.yaml
    └─ xtts_config.yaml
 
-Les scripts utilisent désormais `scripts/utils_config.py` pour charger ces fichiers de config et résoudre les chemins depuis la racine du projet. Les fonctions principales :
+Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de config et résoudre les chemins depuis la racine du projet. Les fonctions principales :
 
 - `get_data_path(key)`: récupère un `Path` à partir d'une clef définie dans `config/paths.yaml`.
 - `ensure_directories([...])`: crée (si besoin) les répertoires référencés et renvoie leur mapping.
 - `load_characters_config()` / `load_xtts_config()`: chargent les paramètres vocaux et XTTS.
 
-Cette factorisation prépare l'ajout d'une future interface GUI qui orchestrera l'exécution des étapes et l'édition des paramètres.
+Une interface GUI est disponible via `python scripts/gui_pipeline.py` :
+
+- menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
+- modification en direct des chemins définis dans `config/paths.yaml` (base par défaut = racine du projet) ;
+- sauvegarde et rechargement de l'état (chemins, thème sombre/clair, étape et fichier en cours) dans `config/gui_state.json` ou via « Fichier → Enregistrer sous… » ;
+- reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).

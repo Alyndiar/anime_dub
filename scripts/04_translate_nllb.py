@@ -1,5 +1,7 @@
 # scripts/04_translate_nllb.py
+import argparse
 import json
+from typing import Iterable
 from tqdm import tqdm
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
@@ -46,7 +48,16 @@ def write_srt(segments, srt_path):
     srt_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def translate_all() -> None:
+def iter_sources(stems_filter: set[str] | None) -> Iterable[str]:
+    src_json_dir = get_data_path("whisper_json_dir")
+    for jpath in sorted(src_json_dir.glob("*.json")):
+        stem = jpath.stem
+        if stems_filter and stem not in stems_filter:
+            continue
+        yield stem
+
+
+def translate_all(stems: set[str] | None = None) -> None:
     paths = ensure_directories(["whisper_json_fr_dir", "fr_srt_dir"])
     src_json_dir = get_data_path("whisper_json_dir")
     out_json_dir = paths["whisper_json_fr_dir"]
@@ -56,8 +67,8 @@ def translate_all() -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to("cuda")
 
-    for jpath in src_json_dir.glob("*.json"):
-        stem = jpath.stem
+    for stem in iter_sources(stems):
+        jpath = src_json_dir / f"{stem}.json"
         data = json.loads(jpath.read_text(encoding="utf-8"))
         segs = data["segments"]
 
@@ -81,4 +92,9 @@ def translate_all() -> None:
 
 
 if __name__ == "__main__":
-    translate_all()
+    parser = argparse.ArgumentParser(description="Traduction NLLB-200 d'un ou plusieurs épisodes")
+    parser.add_argument("--stem", action="append", help="Nom(s) de fichier json (sans suffixe) à traduire")
+    args = parser.parse_args()
+
+    stems_filter = set(args.stem) if args.stem else None
+    translate_all(stems_filter)

@@ -1,7 +1,9 @@
 # scripts/06_assign_characters.py
+import argparse
 import json
 import os
 from pathlib import Path
+from typing import Iterable
 
 import numpy as np
 import soundfile as sf
@@ -125,7 +127,16 @@ def assign_for_episode(embed_model, bank, threshold, fallback_char, fr_json: Pat
     print("Segments fusionnés écrits :", out_path)
 
 
-def assign_all():
+def iter_sources(stems_filter: set[str] | None) -> Iterable[str]:
+    transcripts_fr = get_data_path("whisper_json_fr_dir")
+    for fr_json in sorted(transcripts_fr.glob("*_fr.json")):
+        stem = fr_json.stem.replace("_fr", "")
+        if stems_filter and stem not in stems_filter:
+            continue
+        yield stem
+
+
+def assign_all(stems: set[str] | None = None):
     paths = ensure_directories(["segments_dir"])
     diar_dir = get_data_path("diarization_dir")
     audio_raw = get_data_path("audio_raw_dir")
@@ -143,9 +154,15 @@ def assign_all():
     if not bank:
         print("Banque de personnages vide : ajoute des embeddings dans data/speaker_bank.")
 
-    for fr_json in transcripts_fr.glob("*_fr.json"):
+    for stem in iter_sources(stems):
+        fr_json = transcripts_fr / f"{stem}_fr.json"
         assign_for_episode(embed_model, bank, threshold, fallback_char, fr_json, diar_dir, audio_raw, seg_out_dir)
 
 
 if __name__ == "__main__":
-    assign_all()
+    parser = argparse.ArgumentParser(description="Association segments/locuteurs pour un ou plusieurs épisodes")
+    parser.add_argument("--stem", action="append", help="Nom(s) d'épisode sans suffixe")
+    args = parser.parse_args()
+
+    stems_filter = set(args.stem) if args.stem else None
+    assign_all(stems_filter)

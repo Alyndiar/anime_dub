@@ -1,5 +1,7 @@
 # scripts/01_extract_audio.py
+import argparse
 import subprocess
+from typing import Iterable
 
 from utils_config import ensure_directories, get_data_path
 
@@ -9,13 +11,23 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-def extract_audio_for_all_sources() -> None:
-    paths = ensure_directories(["audio_raw_dir"])
+def iter_sources(stems_filter: set[str] | None) -> Iterable[str]:
     episodes_raw = get_data_path("episodes_raw_dir")
+    for video in sorted(episodes_raw.glob("*.mkv")):
+        stem = video.stem
+        if stems_filter and stem not in stems_filter:
+            continue
+        yield stem
+
+
+def extract_audio_for_all_sources(stems: set[str] | None = None) -> None:
+    paths = ensure_directories(["audio_raw_dir"])
     audio_raw = paths["audio_raw_dir"]
 
-    for video in episodes_raw.glob("*.mkv"):
-        stem = video.stem
+    episodes_raw = get_data_path("episodes_raw_dir")
+
+    for stem in iter_sources(stems):
+        video = episodes_raw / f"{stem}.mkv"
         full_wav = audio_raw / f"{stem}_full.wav"
         mono16 = audio_raw / f"{stem}_mono16k.wav"
 
@@ -35,4 +47,9 @@ def extract_audio_for_all_sources() -> None:
 
 
 if __name__ == "__main__":
-    extract_audio_for_all_sources()
+    parser = argparse.ArgumentParser(description="Extraction audio par lot ou par épisode")
+    parser.add_argument("--stem", action="append", help="Nom(s) de fichier (sans extension) à traiter uniquement")
+    args = parser.parse_args()
+
+    stems_filter = set(args.stem) if args.stem else None
+    extract_audio_for_all_sources(stems_filter)

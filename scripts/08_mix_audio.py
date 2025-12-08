@@ -1,5 +1,7 @@
 # scripts/08_mix_audio.py
+import argparse
 import subprocess
+from typing import Iterable
 
 from utils_config import ensure_directories, get_data_path
 
@@ -9,13 +11,22 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-def mix_all():
+def iter_targets(stems_filter: set[str] | None) -> Iterable[str]:
+    dub_dir = get_data_path("dub_audio_dir")
+    for voices in sorted(dub_dir.glob("*_fr_voices.wav")):
+        stem = voices.stem.replace("_fr_voices", "")
+        if stems_filter and stem not in stems_filter:
+            continue
+        yield stem
+
+
+def mix_all(stems: set[str] | None = None):
     paths = ensure_directories(["dub_audio_dir"])
     raw_dir = get_data_path("audio_raw_dir")
     dub_dir = paths["dub_audio_dir"]
 
-    for voices in dub_dir.glob("*_fr_voices.wav"):
-        stem = voices.stem.replace("_fr_voices", "")
+    for stem in iter_targets(stems):
+        voices = dub_dir / f"{stem}_fr_voices.wav"
         original = raw_dir / f"{stem}_full.wav"
         out_mix = dub_dir / f"{stem}_fr_full.wav"
 
@@ -31,4 +42,9 @@ def mix_all():
 
 
 if __name__ == "__main__":
-    mix_all()
+    parser = argparse.ArgumentParser(description="Mixage voix FR + BGM d'origine")
+    parser.add_argument("--stem", action="append", help="Nom(s) d'épisode à mixer")
+    args = parser.parse_args()
+
+    stems_filter = set(args.stem) if args.stem else None
+    mix_all(stems_filter)

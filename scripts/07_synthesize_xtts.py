@@ -1,6 +1,8 @@
 # scripts/07_synthesize_xtts.py
+import argparse
 from pathlib import Path
 import json
+from typing import Iterable
 import numpy as np
 import soundfile as sf
 from TTS.api import TTS
@@ -56,7 +58,16 @@ def synthesize_episode(seg_file, tts, char_voices, sample_rate, out_dir):
     print("Piste voix FR écrite :", out_wav)
 
 
-def synthesize_all():
+def iter_segments(stems_filter: set[str] | None) -> Iterable[str]:
+    seg_in = get_data_path("segments_dir")
+    for seg_file in sorted(seg_in.glob("*_segments.json")):
+        stem = seg_file.stem.replace("_segments", "")
+        if stems_filter and stem not in stems_filter:
+            continue
+        yield stem
+
+
+def synthesize_all(stems: set[str] | None = None):
     paths = ensure_directories(["dub_audio_dir"])
     seg_in = get_data_path("segments_dir")
     out_dir = paths["dub_audio_dir"]
@@ -69,9 +80,15 @@ def synthesize_all():
 
     tts = TTS(model_name).to(device)
 
-    for seg_file in seg_in.glob("*_segments.json"):
+    for stem in iter_segments(stems):
+        seg_file = seg_in / f"{stem}_segments.json"
         synthesize_episode(seg_file, tts, char_voices, sample_rate, out_dir)
 
 
 if __name__ == "__main__":
-    synthesize_all()
+    parser = argparse.ArgumentParser(description="Synthèse XTTS pour un ou plusieurs épisodes")
+    parser.add_argument("--stem", action="append", help="Nom(s) d'épisode à traiter")
+    args = parser.parse_args()
+
+    stems_filter = set(args.stem) if args.stem else None
+    synthesize_all(stems_filter)
