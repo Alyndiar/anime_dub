@@ -39,6 +39,7 @@ class WorkflowStep:
     source_key: str | None
     glob_pattern: str | None
     description: str
+    supports_verbose: bool = False
 
     def list_units(self, path_manager: "PathManager") -> List[str]:
         """Retourne les stems attendus pour cette étape."""
@@ -55,7 +56,7 @@ class WorkflowStep:
 
 
 STEPS: list[WorkflowStep] = [
-    WorkflowStep("01", "Extraction audio", "01_extract_audio.py", "episodes_raw_dir", "*.mkv", "ffmpeg → wav"),
+    WorkflowStep("01", "Extraction audio", "01_extract_audio.py", "episodes_raw_dir", "*.mkv", "ffmpeg → wav", supports_verbose=True),
     WorkflowStep("02", "Diarisation", "02_diarize.py", "audio_raw_dir", "*_mono16k.wav", "pyannote 3.1"),
     WorkflowStep("03", "Transcription Whisper", "03_whisper_transcribe.py", "audio_raw_dir", "*_mono16k.wav", "Whisper large-v3"),
     WorkflowStep("04", "Traduction NLLB", "04_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB 600M"),
@@ -168,6 +169,7 @@ class WorkflowState:
         self.selection_mode = "all"  # values: all, single, selection
         self.single_stem = None
         self.selected_units: list[str] = []
+        self.verbose = False
 
     def load(self, path: Path = STATE_PATH) -> None:
         if not path.exists():
@@ -183,6 +185,7 @@ class WorkflowState:
         self.selection_mode = data.get("selection_mode", self.selection_mode)
         self.single_stem = data.get("single_stem")
         self.selected_units = data.get("selected_units", self.selected_units)
+        self.verbose = bool(data.get("verbose", self.verbose))
 
     def save(self, path: Path = STATE_PATH) -> None:
         payload = {
@@ -196,6 +199,7 @@ class WorkflowState:
             "selection_mode": self.selection_mode,
             "single_stem": self.single_stem,
             "selected_units": self.selected_units,
+            "verbose": self.verbose,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -270,6 +274,8 @@ class WorkflowRunner:
                     return
 
                 units_for_step = self._filter_units(step.list_units(self.path_manager))
+                if self.state.verbose:
+                    self.log(f"[verbose] Ciblage pour {step.label}: {units_for_step}")
                 if not units_for_step:
                     self.log(f"Aucun fichier disponible pour {step.label}, étape ignorée.")
                     continue
@@ -331,6 +337,8 @@ class WorkflowRunner:
                     continue
 
             units = self._filter_units(step.list_units(self.path_manager))
+            if self.state.verbose:
+                self.log(f"[verbose] Fichiers pour {step.label}: {units}")
             if not units:
                 self.log(f"Aucun fichier sélectionné pour {step.label}, étape ignorée.")
                 continue
@@ -397,11 +405,19 @@ class WorkflowRunner:
         stems = [u for u in units if u != "_all_"]
         for stem in stems:
             cmd.extend(["--stem", stem])
+        if self.state.verbose and step.supports_verbose:
+            cmd.append("--verbose")
         env = os.environ.copy()
         env["ANIME_DUB_PROJECT_ROOT"] = str(self.path_manager.base_dir)
         env["ANIME_DUB_CONFIG_DIR"] = str(self.path_manager.config_dir)
+        if self.state.verbose:
+            env["ANIME_DUB_VERBOSE"] = "1"
         if stems:
             env["ANIME_DUB_SELECTED_STEMS"] = json.dumps(stems, ensure_ascii=False)
+        if self.state.verbose:
+            env_summary = {k: v for k, v in env.items() if k.startswith("ANIME_DUB_")}
+            self.log(f"[verbose] Commande : {' '.join(cmd)}")
+            self.log(f"[verbose] Environnement : {env_summary}")
         try:
             completed = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
             if completed.stdout:
@@ -449,6 +465,7 @@ class PipelineGUI:
         self.single_stem_var = tk.StringVar(value=self.state.single_stem or "")
         self.selected_units: list[str] = list(self.state.selected_units)
         self.available_stems: list[str] = []
+        self.verbose_var = tk.BooleanVar(value=self.state.verbose)
 
         self._build_menu()
         self._build_layout()
@@ -490,6 +507,14 @@ class PipelineGUI:
 
         self.options_menu = tk.Menu(self.menubar, tearoff=0)
         self.options_menu.add_command(label="Configurer les chemins…", command=self.open_paths_window)
+        self.options_menu.add_separator()
+        self.options_menu.add_checkbutton(
+            label="Verbose (traces détaillées)",
+            onvalue=True,
+            offvalue=False,
+            variable=self.verbose_var,
+            command=self._toggle_verbose,
+        )
         self.options_menu.add_separator()
         pause_menu = tk.Menu(self.options_menu, tearoff=0)
         pause_menu.add_command(label="Aucune pause", command=lambda: self._set_pause("none"))
@@ -569,6 +594,8 @@ class PipelineGUI:
         ttk.Button(controls, text="Démarrer / Reprendre", command=self.start_workflow, style="Accent.TButton").pack(side=tk.LEFT)
         ttk.Button(controls, text="Pause", command=self.runner.pause, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
         ttk.Button(controls, text="Arrêter", command=self.runner.stop, style="Accent.TButton").pack(side=tk.LEFT)
+
+        ttk.Checkbutton(controls, text="Verbose", variable=self.verbose_var, style="Card.TCheckbutton", command=self._toggle_verbose).pack(side=tk.LEFT, padx=(16, 4))
 
         ttk.Label(controls, text="Mode de pause :").pack(side=tk.LEFT, padx=(20, 4))
         self.pause_var = tk.StringVar(value=self.state.pause_mode)
@@ -663,6 +690,12 @@ class PipelineGUI:
         self.state.pause_mode = mode
         self._save_state()
 
+    def _toggle_verbose(self):
+        self.state.verbose = bool(self.verbose_var.get())
+        if self.state.verbose:
+            self.log("[verbose] Traces détaillées activées.")
+        self._save_state()
+
     def start_workflow(self):
         selected = [step_id for step_id, var in self.step_vars.items() if var.get()]
         if not selected:
@@ -674,6 +707,7 @@ class PipelineGUI:
         self.state.selection_mode = self.selection_mode_var.get()
         self.state.single_stem = self.single_stem_var.get() or None
         self.state.selected_units = self.selected_units
+        self.state.verbose = bool(self.verbose_var.get())
         self._save_state()
         self.runner.start(selected, self.pause_var.get())
 
@@ -696,6 +730,7 @@ class PipelineGUI:
         self.state.load(Path(src))
         self.pause_var.set(self.state.pause_mode)
         self.apply_theme(self.state.theme)
+        self.verbose_var.set(self.state.verbose)
         self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
         self.project_name = self.state.project.get("name")
         self.anime_title = self.state.project.get("anime_title")
