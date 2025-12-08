@@ -252,30 +252,32 @@ class WorkflowRunner:
             if not units:
                 self.log(f"Aucun fichier sélectionné pour {step.label}, étape ignorée.")
                 continue
+            batches = [[u] for u in units] if self.state.pause_mode == "file" else [units]
             start_index = self.state.current_index if self.state.current_step == step.step_id else 0
-            for idx, unit in enumerate(units):
-                if idx < start_index:
+            for batch_idx, batch in enumerate(batches):
+                if batch_idx < start_index:
                     continue
                 if self.stop_event.is_set():
                     self.log("Arrêt demandé, sauvegarde de l'état…")
                     self.state.current_step = step.step_id
-                    self.state.current_index = idx
+                    self.state.current_index = batch_idx
                     self.state.save()
                     return
 
                 self.state.current_step = step.step_id
-                self.state.current_index = idx
+                self.state.current_index = batch_idx
                 self.state.save()
 
-                self.log(f"→ {step.label} : {unit}")
-                self._run_script(step, unit)
+                label_units = ", ".join(batch)
+                self.log(f"→ {step.label} : {label_units}")
+                self._run_script(step, batch)
 
                 if self.pause_event.is_set():
                     self.log("Mise en pause demandée.")
                     self.state.save()
                     return
 
-                if self.state.pause_mode == "file" and unit != "_all_":
+                if self.state.pause_mode == "file" and batch != ["_all_"]:
                     self.log("Pause après fichier (option active).")
                     self.pause_event.set()
                     self.state.save()
@@ -298,14 +300,17 @@ class WorkflowRunner:
         self.state.current_index = 0
         self.state.save()
 
-    def _run_script(self, step: WorkflowStep, unit: str):
+    def _run_script(self, step: WorkflowStep, units: list[str]):
         script_path = PROJECT_ROOT / "scripts" / step.script
         cmd = ["python", str(script_path)]
-        if unit != "_all_":
-            cmd.extend(["--stem", unit])
+        stems = [u for u in units if u != "_all_"]
+        for stem in stems:
+            cmd.extend(["--stem", stem])
         env = os.environ.copy()
         env["ANIME_DUB_PROJECT_ROOT"] = str(self.path_manager.base_dir)
         env["ANIME_DUB_CONFIG_DIR"] = str(self.path_manager.config_dir)
+        if stems:
+            env["ANIME_DUB_SELECTED_STEMS"] = json.dumps(stems, ensure_ascii=False)
         try:
             completed = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
             if completed.stdout:
