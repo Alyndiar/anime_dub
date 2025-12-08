@@ -1,26 +1,23 @@
 # scripts/06_assign_characters.py
-from pathlib import Path
 import json
+import os
+from pathlib import Path
+
 import numpy as np
 import soundfile as sf
+from pyannote.audio import Model
 
-DIAR = Path("data/diarization")
-TRANS_FR = Path("data/transcripts/whisper_json_fr")
-AUDIO_RAW = Path("data/audio_raw")
-BANK = Path("data/speaker_bank")
-SEG_OUT = Path("data/segments")
-SEG_OUT.mkdir(parents=True, exist_ok=True)
+from utils_config import (
+    PROJECT_ROOT,
+    ensure_directories,
+    get_data_path,
+    load_characters_config,
+)
 
 SAMPLE_RATE = 16000
 
-# Chargement de la banque (simple : 1 profil par perso)
-CHAR_BANK = {
-    # "char_ning": np.load("data/speaker_bank/char_ning.npy"),
-    # ...
-}
 
-def parse_rttm(rttm_path):
-    # Format RTTM: on parse juste ce qu'il faut
+def parse_rttm(rttm_path: Path):
     segments = []
     for line in rttm_path.read_text().splitlines():
         if line.startswith("SPEAKER"):
@@ -31,10 +28,12 @@ def parse_rttm(rttm_path):
             segments.append({"speaker": spk, "start": start, "end": start + dur})
     return segments
 
-def load_audio(wav_path):
+
+def load_audio(wav_path: Path):
     audio, sr = sf.read(wav_path)
     assert sr == SAMPLE_RATE
     return audio
+
 
 def get_segment_embedding(embed_model, audio, start, end):
     s = int(start * SAMPLE_RATE)
@@ -43,30 +42,49 @@ def get_segment_embedding(embed_model, audio, start, end):
     emb = embed_model({"waveform": np.expand_dims(chunk, 0), "sample_rate": SAMPLE_RATE})
     return emb.detach().cpu().numpy().squeeze()
 
+
 def cosine(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-def match_character(emb):
-    best_char, best_sim = None, -1.0
-    for char, ref in CHAR_BANK.items():
+
+def load_character_bank():
+    cfg = load_characters_config()
+    bank = {}
+    for char_key, char_cfg in cfg.get("characters", {}).items():
+        emb_path = char_cfg.get("embedding_path")
+        if not emb_path:
+            continue
+        path = Path(emb_path)
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        if path.exists():
+            bank[char_key] = np.load(path)
+    matching_cfg = cfg.get("matching", {})
+    threshold = float(matching_cfg.get("similarity_threshold", 0.7))
+    fallback = matching_cfg.get("fallback_character", "unknown")
+    return bank, threshold, fallback
+
+
+def match_character(emb, bank, threshold, fallback_char):
+    best_char, best_sim = fallback_char, -1.0
+    for char, ref in bank.items():
         sim = cosine(emb, ref)
         if sim > best_sim:
             best_sim = sim
             best_char = char
-    if best_sim < 0.7:  # seuil à ajuster
-        return "unknown", best_sim
+    if best_sim < threshold:
+        return fallback_char, best_sim
     return best_char, best_sim
 
-# TODO: initialiser embed_model comme dans build_speaker_bank.py
 
-for fr_json in TRANS_FR.glob("*_fr.json"):
+def assign_for_episode(embed_model, bank, threshold, fallback_char, fr_json: Path, diar_dir: Path, audio_raw: Path, seg_out_dir: Path):
     stem = fr_json.stem.replace("_fr", "")
-    diar_rttm = DIAR / f"{stem}.rttm"
-    wav_path = AUDIO_RAW / f"{stem}_mono16k.wav"
+    diar_rttm = diar_dir / f"{stem}.rttm"
+    wav_path = audio_raw / f"{stem}_mono16k.wav"
 
     if not diar_rttm.exists():
         print("Pas de diarisation pour", stem)
-        continue
+        return
 
     diar_segments = parse_rttm(diar_rttm)
     diar_segments.sort(key=lambda x: x["start"])
@@ -90,7 +108,7 @@ for fr_json in TRANS_FR.glob("*_fr.json"):
             seg_start, seg_end = seg["start"], seg["end"]
 
         emb = get_segment_embedding(embed_model, audio, seg_start, seg_end)
-        char, score = match_character(emb)
+        char, score = match_character(emb, bank, threshold, fallback_char)
 
         merged.append({
             "id": seg["id"],
@@ -102,6 +120,32 @@ for fr_json in TRANS_FR.glob("*_fr.json"):
             "text_fr": seg["text_fr"],
         })
 
-    out_path = SEG_OUT / f"{stem}_segments.json"
+    out_path = seg_out_dir / f"{stem}_segments.json"
     out_path.write_text(json.dumps({"segments": merged}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("Segments fusionnés écrits :", out_path)
+
+
+def assign_all():
+    paths = ensure_directories(["segments_dir"])
+    diar_dir = get_data_path("diarization_dir")
+    audio_raw = get_data_path("audio_raw_dir")
+    transcripts_fr = get_data_path("whisper_json_fr_dir")
+    seg_out_dir = paths["segments_dir"]
+
+    hf_token = os.environ.get("HF_TOKEN")
+    assert hf_token, "Définis HF_TOKEN=ton_token_HF"
+    embed_model = Model.from_pretrained(
+        "pyannote/embedding",
+        use_auth_token=hf_token,
+    )
+
+    bank, threshold, fallback_char = load_character_bank()
+    if not bank:
+        print("Banque de personnages vide : ajoute des embeddings dans data/speaker_bank.")
+
+    for fr_json in transcripts_fr.glob("*_fr.json"):
+        assign_for_episode(embed_model, bank, threshold, fallback_char, fr_json, diar_dir, audio_raw, seg_out_dir)
+
+
+if __name__ == "__main__":
+    assign_all()

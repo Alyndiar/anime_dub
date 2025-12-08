@@ -1,25 +1,18 @@
 # scripts/04_translate_nllb.py
-from pathlib import Path
 import json
 from tqdm import tqdm
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-IN_JSON = Path("data/transcripts/whisper_json")
-OUT_JSON = Path("data/transcripts/whisper_json_fr")
-OUT_SRT = Path("data/transcripts/fr_srt")
-OUT_JSON.mkdir(parents=True, exist_ok=True)
-OUT_SRT.mkdir(parents=True, exist_ok=True)
+from utils_config import ensure_directories, get_data_path
 
-model_name = "facebook/nllb-200-distilled-600M"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to("cuda")
 
 # Codes FLORES pour chinois simplifié / français
 SRC_LANG = "zho_Hans"
 TGT_LANG = "fra_Latn"
 
-def translate_batch(texts):
+
+def translate_batch(texts, tokenizer, model):
     inputs = tokenizer(
         texts,
         return_tensors="pt",
@@ -34,6 +27,7 @@ def translate_batch(texts):
             max_length=256,
         )
     return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
 
 def write_srt(segments, srt_path):
     def srt_time(t):
@@ -51,25 +45,40 @@ def write_srt(segments, srt_path):
         lines.append("")
     srt_path.write_text("\n".join(lines), encoding="utf-8")
 
-for jpath in IN_JSON.glob("*.json"):
-    stem = jpath.stem
-    data = json.loads(jpath.read_text(encoding="utf-8"))
-    segs = data["segments"]
 
-    texts = [s["text"] for s in segs]
-    batch_size = 16
-    translations = []
-    for i in tqdm(range(0, len(texts), batch_size), desc=stem):
-        batch = texts[i:i+batch_size]
-        translations.extend(translate_batch(batch))
+def translate_all() -> None:
+    paths = ensure_directories(["whisper_json_fr_dir", "fr_srt_dir"])
+    src_json_dir = get_data_path("whisper_json_dir")
+    out_json_dir = paths["whisper_json_fr_dir"]
+    out_srt_dir = paths["fr_srt_dir"]
 
-    for s, fr in zip(segs, translations):
-        s["text_fr"] = fr.strip()
+    model_name = "facebook/nllb-200-distilled-600M"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to("cuda")
 
-    out_json = OUT_JSON / f"{stem}_fr.json"
-    out_json.write_text(json.dumps({"segments": segs}, ensure_ascii=False, indent=2), encoding="utf-8")
+    for jpath in src_json_dir.glob("*.json"):
+        stem = jpath.stem
+        data = json.loads(jpath.read_text(encoding="utf-8"))
+        segs = data["segments"]
 
-    out_srt = OUT_SRT / f"{stem}_fr.srt"
-    write_srt(segs, out_srt)
+        texts = [s["text"] for s in segs]
+        batch_size = 16
+        translations = []
+        for i in tqdm(range(0, len(texts), batch_size), desc=stem):
+            batch = texts[i:i+batch_size]
+            translations.extend(translate_batch(batch, tokenizer, model))
 
-    print("Traduction OK :", stem)
+        for s, fr in zip(segs, translations):
+            s["text_fr"] = fr.strip()
+
+        out_json = out_json_dir / f"{stem}_fr.json"
+        out_json.write_text(json.dumps({"segments": segs}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        out_srt = out_srt_dir / f"{stem}_fr.srt"
+        write_srt(segs, out_srt)
+
+        print("Traduction OK :", stem)
+
+
+if __name__ == "__main__":
+    translate_all()

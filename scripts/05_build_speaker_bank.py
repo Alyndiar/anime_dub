@@ -1,15 +1,9 @@
 # scripts/05_build_speaker_bank.py
-from pathlib import Path
 import numpy as np
 import soundfile as sf
 from pyannote.audio import Model
-from pyannote.audio.pipelines.utils.hook import ProgressHook
-from pyannote.audio.pipelines.utils import SpeakerDiarizationMixin
 
-AUDIO_RAW = Path("data/audio_raw")
-DIAR = Path("data/diarization")
-BANK = Path("data/speaker_bank")
-BANK.mkdir(parents=True, exist_ok=True)
+from utils_config import ensure_directories
 
 # Modèle d'embedding de locuteur pyannote (exemple)
 embed_model = Model.from_pretrained(
@@ -18,6 +12,7 @@ embed_model = Model.from_pretrained(
 )
 
 SAMPLE_RATE = 16000  # à adapter selon ton audio
+
 
 def get_embedding(wav_path, start, end):
     audio, sr = sf.read(wav_path)
@@ -29,8 +24,18 @@ def get_embedding(wav_path, start, end):
     emb = embed_model({"waveform": np.expand_dims(chunk, 0), "sample_rate": sr})
     return emb.detach().cpu().numpy().squeeze()
 
+
+def prepare_bank_directories() -> None:
+    ensure_directories(["speaker_bank_dir"])
+
+
 # Ensuite tu peux :
 # - sélectionner quelques épisodes (manuellement dans le script)
 # - pour chaque segment (RTTM), calculer un embedding
 # - les stocker dans un .npz par épisode pour ensuite les clusteriser avec sklearn
+
+
+if __name__ == "__main__":
+    # Prépare simplement la structure pour la prochaine étape GUI / clustering.
+    prepare_bank_directories()
 

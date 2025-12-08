@@ -5,60 +5,73 @@ import numpy as np
 import soundfile as sf
 from TTS.api import TTS
 
-SEG_IN = Path("data/segments")
-VOICES = Path("data/voices")
-OUT = Path("data/dub_audio")
-OUT.mkdir(parents=True, exist_ok=True)
+from utils_config import PROJECT_ROOT, ensure_directories, get_data_path, load_xtts_config
 
-# Chargement du modèle XTTS-v2
-# (vérifie le nom exact du modèle disponible via TTS.list_models())
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
 
-SAMPLE_RATE = 24000  # XTTS-v2 sort du 24kHz normal.:contentReference[oaicite:14]{index=14}  
+def build_char_voices(reference_cfg):
+    voices = {}
+    for char, ref_path in reference_cfg.items():
+        if not ref_path:
+            continue
+        path = Path(ref_path)
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        if path.exists():
+            voices[char] = path
+    return voices
 
-# Mapping personnage -> fichier voix de référence (audio en mandarin du perso)
-CHAR_VOICES = {
-    "char_ning": VOICES / "char_ning" / "ref1.wav",
-    "char_heroine": VOICES / "char_heroine" / "ref1.wav",
-    # ...
-}
 
-def synthesize_episode(seg_file):
+def synthesize_episode(seg_file, tts, char_voices, sample_rate, out_dir):
     stem = seg_file.stem.replace("_segments", "")
     data = json.loads(seg_file.read_text(encoding="utf-8"))
     segs = data["segments"]
 
-    # Durée totale : on prend la fin du dernier segment + marge
     total_dur = max(s["end"] for s in segs) + 1.0
-    total_samples = int(total_dur * SAMPLE_RATE)
+    total_samples = int(total_dur * sample_rate)
     mix = np.zeros((total_samples,), dtype=np.float32)
 
     for seg in segs:
         text = seg["text_fr"]
         char = seg["character"]
-        if char == "unknown" or char not in CHAR_VOICES:
+        if char == "unknown" or char not in char_voices:
             continue
 
-        ref_wav = str(CHAR_VOICES[char])
-        # Génération audio FR
+        ref_wav = str(char_voices[char])
         audio = tts.tts(
             text=text,
             speaker_wav=ref_wav,
             language="fr"
-        )  # numpy array float32, 24k
+        )
 
-        start_sample = int(seg["start"] * SAMPLE_RATE)
+        start_sample = int(seg["start"] * sample_rate)
         end_sample = start_sample + len(audio)
         if end_sample > len(mix):
-            # on tronque si besoin
             end_sample = len(mix)
             audio = audio[: end_sample - start_sample]
 
         mix[start_sample:end_sample] += audio
 
-    out_wav = OUT / f"{stem}_fr_voices.wav"
-    sf.write(out_wav, mix, SAMPLE_RATE)
+    out_wav = out_dir / f"{stem}_fr_voices.wav"
+    sf.write(out_wav, mix, sample_rate)
     print("Piste voix FR écrite :", out_wav)
 
-for seg_file in SEG_IN.glob("*_segments.json"):
-    synthesize_episode(seg_file)
+
+def synthesize_all():
+    paths = ensure_directories(["dub_audio_dir"])
+    seg_in = get_data_path("segments_dir")
+    out_dir = paths["dub_audio_dir"]
+
+    xtts_cfg = load_xtts_config()
+    model_name = xtts_cfg.get("model_name", "tts_models/multilingual/multi-dataset/xtts_v2")
+    device = xtts_cfg.get("device", "cuda")
+    sample_rate = int(xtts_cfg.get("sample_rate", 24000))
+    char_voices = build_char_voices(xtts_cfg.get("reference_voices", {}))
+
+    tts = TTS(model_name).to(device)
+
+    for seg_file in seg_in.glob("*_segments.json"):
+        synthesize_episode(seg_file, tts, char_voices, sample_rate, out_dir)
+
+
+if __name__ == "__main__":
+    synthesize_all()
