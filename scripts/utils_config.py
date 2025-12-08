@@ -7,13 +7,21 @@ Utilitaires pour charger les fichiers de configuration YAML du projet.
 - xtts_config.yaml : configuration du modèle XTTS et des voix de référence
 """
 
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable
 import yaml
 
 
-# Racine du projet = dossier parent de "scripts"
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Racine du projet = dossier parent de "scripts" (surchargée par la variable
+# d'environnement ANIME_DUB_PROJECT_ROOT pour permettre au GUI de cibler un
+# projet externe avec sa propre hiérarchie config/data).
+PROJECT_ROOT = Path(os.environ.get("ANIME_DUB_PROJECT_ROOT", Path(__file__).resolve().parents[1]))
+
+# Répertoire de configuration (surchargé par ANIME_DUB_CONFIG_DIR). Cela permet
+# de maintenir un dossier config par projet sans toucher aux fichiers du dépôt
+# initial.
+CONFIG_DIR = Path(os.environ.get("ANIME_DUB_CONFIG_DIR", PROJECT_ROOT / "config"))
 
 
 def _load_yaml(relative_path: str) -> Dict[str, Any]:
@@ -23,7 +31,9 @@ def _load_yaml(relative_path: str) -> Dict[str, Any]:
     :param relative_path: Chemin relatif depuis la racine (ex: "config/paths.yaml")
     :return: dictionnaire Python
     """
-    path = PROJECT_ROOT / relative_path
+    # relative_path est résolu par rapport au répertoire de configuration
+    # courant (potentiellement surchargé par le GUI via l'environnement).
+    path = CONFIG_DIR / Path(relative_path).name
     if not path.exists():
         raise FileNotFoundError(f"Fichier de config introuvable : {path}")
     text = path.read_text(encoding="utf-8")
@@ -89,6 +99,9 @@ def get_data_path(key: str) -> Path:
     paths_cfg = load_paths_config()
     if key not in paths_cfg:
         raise KeyError(f"Clé '{key}' absente de paths.yaml")
+    # Les chemins définis dans paths.yaml peuvent être relatifs : on les
+    # résout toujours par rapport à PROJECT_ROOT (qui reflète la base du
+    # projet courant : dépôt principal ou projet sélectionné dans le GUI).
     return PROJECT_ROOT / paths_cfg[key]
 
 

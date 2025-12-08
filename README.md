@@ -27,8 +27,9 @@ Ce projet est un pipeline local pour **doubler des animés chinois en français*
 
 Pipeline pour chaque épisode :
 
-1. **Extraction audio**  
+1. **Extraction audio**
    - `ffmpeg` extrait l’audio de la vidéo source (`data/episodes_raw/` → `data/audio_raw/`).
+   - Formats vidéo détectés : `.mkv`, `.mp4`, `.mov`, `.m4v`, `.avi`, `.ts`.
 
 2. **(Optionnel) Séparation stems**  
    - Utilisation d’outils comme **UVR / Demucs** pour séparer voix / BGM+SFX.
@@ -63,6 +64,7 @@ Arborescence principale :
 
 ```text
 anime-dub/
+├─ launcher.bat             # Lance le GUI directement (Windows)
 ├─ data/
 │  ├─ episodes_raw/          # Vidéos source (non versionnées)
 │  ├─ audio_raw/             # Audios extraits
@@ -87,16 +89,41 @@ anime-dub/
 │  ├─ 06_assign_characters.py
 │  ├─ 07_synthesize_xtts.py
 │  ├─ 08_mix_audio.py
-│  └─ batch_process.py
+│  ├─ 09_remux.py
+│  └─ gui_pipeline.py        # GUI pour orchestrer les étapes 01→09
 └─ config/
    ├─ paths.yaml
    ├─ characters.yaml
    └─ xtts_config.yaml
 
-Les scripts utilisent désormais `scripts/utils_config.py` pour charger ces fichiers de config et résoudre les chemins depuis la racine du projet. Les fonctions principales :
+Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de config et résoudre les chemins depuis la racine du projet. Les fonctions principales :
 
 - `get_data_path(key)`: récupère un `Path` à partir d'une clef définie dans `config/paths.yaml`.
 - `ensure_directories([...])`: crée (si besoin) les répertoires référencés et renvoie leur mapping.
 - `load_characters_config()` / `load_xtts_config()`: chargent les paramètres vocaux et XTTS.
 
-Cette factorisation prépare l'ajout d'une future interface GUI qui orchestrera l'exécution des étapes et l'édition des paramètres.
+Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directement avec `launcher.bat` sous Windows :
+
+- menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
+- ciblage des épisodes : traitement complet, mode « 1 seul épisode » avec sélection de fichier dédiée ou sélection multi-fichiers via un explorateur ;
+- gestion de projets (Créer/Charger/Sauvegarder/Fermer) avec un répertoire de base par projet, ses fichiers de config dédiés dans `<projet>/config/` et un état persistant par projet ;
+- création guidée : saisie du titre d'animé et du nom de projet, proposition d'un dossier dédié (inexistant) pré-rempli avec le fichier `<nom_du_projet>.yaml`, les configs par défaut et la hiérarchie `data/` ;
+- modification hiérarchique des chemins via le menu « Options → Configurer les chemins… » : chaque entrée dispose d'un bouton « … » qui ouvre un sélecteur ancré sur le répertoire parent résolu ;
+- sauvegarde et rechargement de l'état (chemins, thème sombre/clair, étape et fichier en cours) dans `config/gui_state.json` ou via « Fichier → Enregistrer sous… » ;
+- lors de l'exécution d'une étape, le GUI exporte les variables d'environnement `ANIME_DUB_PROJECT_ROOT` et `ANIME_DUB_CONFIG_DIR` pour que les helpers (`get_data_path`, `ensure_directories`, etc.) résolvent correctement les chemins du projet sélectionné ;
+- option « Verbose » dans le menu Options ou la barre de commandes pour tracer en détail les appels des scripts (commande, environnement `ANIME_DUB_VERBOSE`, paramètre `--verbose` lorsque disponible) ;
+- les logs sont affichés dans la fenêtre et simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
+- reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).
+
+### CLI ou GUI ? Pourquoi conserver les deux
+
+- Les scripts `scripts/0X_*.py` restent **exécutables en ligne de commande** (contrainte historique du projet) : chaque script gère ses propres arguments (`--stem`, `--verbose`, etc.) et fonctionne sans le GUI. Cela reste indispensable pour les usages batch, le débogage ciblé et l’exécution sur des machines sans environnement graphique.
+- Le GUI **orchestration** sert de surcouche ergonomique : il prépare l’environnement (variables `ANIME_DUB_PROJECT_ROOT` / `ANIME_DUB_CONFIG_DIR`), sélectionne les stems ciblés et enchaîne les scripts en respectant les pauses, le mode verbose et la reprise. Il ne remplace pas la logique métier des scripts mais la pilote.
+- Choix de design :
+  - **Facteurs communs** dans `scripts/utils_config.py` ou des fonctions internes : cela évite le double code et permet au GUI d’importer et d’appeler proprement sans casser l’interface CLI.
+  - **Journalisation unifiée** : chaque script utilise `logging` (et accepte `--verbose` / `ANIME_DUB_VERBOSE`) pour que le GUI ou la CLI capturent la même trace.
+  - **Isolation par projet** : les chemins par projet sont résolus via les variables d’environnement exportées par le GUI, mais un opérateur CLI peut toujours définir ces variables ou utiliser les arguments `--stem` pour cibler un épisode précis.
+- En pratique :
+  - continuer à exposer un `if __name__ == "__main__":` pour conserver l’entrée CLI ;
+  - structurer les scripts avec des fonctions réutilisables (ex. `run_extract_audio(stems, config, logger)`) afin que le GUI puisse les importer directement si besoin, sans empêcher l’appel direct en CLI ;
+  - limiter les effets de bord (globales) pour que le passage de contexte GUI/CLI reste prévisible.

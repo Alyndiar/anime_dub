@@ -1,10 +1,15 @@
 # scripts/04_translate_nllb.py
+import argparse
 import json
+import logging
+import os
+from typing import Iterable
 from tqdm import tqdm
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 from utils_config import ensure_directories, get_data_path
+from utils_logging import init_logger, parse_stems, should_verbose
 
 
 # Codes FLORES pour chinois simplifié / français
@@ -46,18 +51,38 @@ def write_srt(segments, srt_path):
     srt_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def translate_all() -> None:
+def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
+    src_json_dir = get_data_path("whisper_json_dir")
+    logger.debug("Recherche des transcriptions JSON dans %s", src_json_dir)
+    for jpath in sorted(src_json_dir.glob("*.json")):
+        stem = jpath.stem
+        if stems_filter and stem not in stems_filter:
+            logger.debug("Ignore %s car non sélectionné", stem)
+            continue
+        yield stem
+
+
+def translate_all(
+    stems: set[str] | None = None,
+    verbose: bool = False,
+    logger: logging.Logger | None = None,
+) -> None:
+    logger = init_logger("translate_nllb", verbose, logger)
+
     paths = ensure_directories(["whisper_json_fr_dir", "fr_srt_dir"])
     src_json_dir = get_data_path("whisper_json_dir")
     out_json_dir = paths["whisper_json_fr_dir"]
     out_srt_dir = paths["fr_srt_dir"]
 
     model_name = "facebook/nllb-200-distilled-600M"
+    logger.info("Chargement du modèle NLLB %s", model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to("cuda")
 
-    for jpath in src_json_dir.glob("*.json"):
-        stem = jpath.stem
+    processed_any = False
+    for stem in iter_sources(stems, logger):
+        jpath = src_json_dir / f"{stem}.json"
+        logger.info("Traduction : %s", jpath)
         data = json.loads(jpath.read_text(encoding="utf-8"))
         segs = data["segments"]
 
@@ -77,8 +102,23 @@ def translate_all() -> None:
         out_srt = out_srt_dir / f"{stem}_fr.srt"
         write_srt(segs, out_srt)
 
-        print("Traduction OK :", stem)
+        logger.info("Traduction OK : %s", stem)
+        processed_any = True
+
+    if not processed_any:
+        logger.warning("Aucun fichier json Whisper trouvé pour la traduction.")
 
 
 if __name__ == "__main__":
-    translate_all()
+    parser = argparse.ArgumentParser(description="Traduction NLLB-200 d'un ou plusieurs épisodes")
+    parser.add_argument("--stem", action="append", help="Nom(s) de fichier json (sans suffixe) à traduire")
+    parser.add_argument("--verbose", action="store_true", help="Active les logs détaillés")
+    args = parser.parse_args()
+
+    verbose = args.verbose or should_verbose(os.environ.get("ANIME_DUB_VERBOSE"))
+    logger = init_logger("translate_nllb", verbose)
+
+    stems_filter = parse_stems(args.stem, logger)
+    logger.info("Stems ciblés : %s", sorted(stems_filter) if stems_filter else "tous")
+
+    translate_all(stems_filter, verbose=verbose, logger=logger)

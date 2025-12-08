@@ -1,8 +1,13 @@
 # scripts/03_whisper_transcribe.py
+import argparse
 import json
+import logging
+import os
+from typing import Iterable
 from faster_whisper import WhisperModel
 
 from utils_config import ensure_directories, get_data_path
+from utils_logging import init_logger, parse_stems, should_verbose
 
 
 def write_srt(segments, srt_path):
@@ -22,19 +27,40 @@ def write_srt(segments, srt_path):
     srt_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def transcribe_all() -> None:
+def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
+    audio_raw = get_data_path("audio_raw_dir")
+    logger.debug("Recherche des wav 16 kHz dans %s", audio_raw)
+    for wav in sorted(audio_raw.glob("*_mono16k.wav")):
+        stem = wav.stem.replace("_mono16k", "")
+        if stems_filter and stem not in stems_filter:
+            logger.debug("Ignore %s car non sélectionné", stem)
+            continue
+        yield stem
+
+
+def transcribe_all(
+    stems: set[str] | None = None,
+    verbose: bool = False,
+    logger: logging.Logger | None = None,
+) -> None:
+    logger = init_logger("whisper_transcribe", verbose, logger)
+
     paths = ensure_directories(["whisper_json_dir", "zh_srt_dir"])
     audio_raw = get_data_path("audio_raw_dir")
     out_json = paths["whisper_json_dir"]
     out_srt = paths["zh_srt_dir"]
 
     model_size = "large-v3"
+    logger.info("Chargement du modèle Whisper %s", model_size)
     model = WhisperModel(model_size, device="cuda", compute_type="float16")
 
-    for wav in audio_raw.glob("*_mono16k.wav"):
-        stem = wav.stem.replace("_mono16k", "")
+    processed_any = False
+    for stem in iter_sources(stems, logger):
+        wav = audio_raw / f"{stem}_mono16k.wav"
         json_path = out_json / f"{stem}.json"
         srt_path = out_srt / f"{stem}_zh.srt"
+
+        logger.info("Transcription : %s", wav)
 
         segments_out = []
         segments, info = model.transcribe(str(wav), language="zh", beam_size=5)
@@ -49,8 +75,23 @@ def transcribe_all() -> None:
 
         json_path.write_text(json.dumps({"segments": segments_out}, ensure_ascii=False, indent=2), encoding="utf-8")
         write_srt(segments_out, srt_path)
-        print("Whisper OK :", stem)
+        logger.info("Whisper OK : %s", stem)
+        processed_any = True
+
+    if not processed_any:
+        logger.warning("Aucun fichier wav trouvé pour la transcription.")
 
 
 if __name__ == "__main__":
-    transcribe_all()
+    parser = argparse.ArgumentParser(description="Transcription Whisper d'un ou plusieurs épisodes")
+    parser.add_argument("--stem", action="append", help="Nom(s) d'épisode sans suffixe à traiter")
+    parser.add_argument("--verbose", action="store_true", help="Active les logs détaillés")
+    args = parser.parse_args()
+
+    verbose = args.verbose or should_verbose(os.environ.get("ANIME_DUB_VERBOSE"))
+    logger = init_logger("whisper_transcribe", verbose)
+
+    stems_filter = parse_stems(args.stem, logger)
+    logger.info("Stems ciblés : %s", sorted(stems_filter) if stems_filter else "tous")
+
+    transcribe_all(stems_filter, verbose=verbose, logger=logger)
