@@ -14,32 +14,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from utils_config import ensure_directories, get_data_path
-
-
-def should_verbose(env_value: str | None) -> bool:
-    """Retourne True si la valeur d'environnement active le mode verbose."""
-
-    if not env_value:
-        return False
-    return env_value.lower() in {"1", "true", "yes", "on"}
-
-
-def setup_logger(verbose: bool, external_logger: logging.Logger | None = None) -> logging.Logger:
-    """Prépare un logger interne ou réutilise un logger fourni par le GUI."""
-
-    if external_logger:
-        return external_logger
-
-    logger = logging.getLogger("extract_audio")
-    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
-
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter("[%(levelname)s] %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
-    return logger
+from utils_logging import init_logger, parse_stems, should_verbose
 
 
 def log(message: str, logger: logging.Logger, level: int = logging.DEBUG) -> None:
@@ -107,7 +82,7 @@ def extract_audio_for_all_sources(
 ) -> None:
     """Extrait les pistes audio principales et mono 16 kHz pour chaque source."""
 
-    logger = setup_logger(verbose, logger)
+    logger = init_logger("extract_audio", verbose, logger)
 
     paths = ensure_directories(["audio_raw_dir"])
     audio_raw = paths["audio_raw_dir"]
@@ -184,13 +159,16 @@ def main():
     env_verbose = should_verbose(os.environ.get("ANIME_DUB_VERBOSE"))
     verbose = args.verbose or env_verbose
 
-    logger = setup_logger(verbose)
+    logger = init_logger("extract_audio", verbose)
 
     if verbose:
         log("Mode verbeux activé", logger)
-        log(f"Stems filtrés : {args.stem if args.stem else 'tous'}", logger)
-
-    stems_filter = set(args.stem) if args.stem else None
+    stems_filter = parse_stems(args.stem, logger)
+    log(
+        f"Stems filtrés : {sorted(stems_filter) if stems_filter else 'tous'}",
+        logger,
+        level=logging.INFO if not verbose else logging.DEBUG,
+    )
     extract_audio_for_all_sources(stems_filter, verbose=verbose, logger=logger)
 
 
