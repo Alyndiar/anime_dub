@@ -14,6 +14,7 @@ Le GUI est basé sur Tkinter afin d'éviter de nouvelles dépendances.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -302,8 +303,11 @@ class WorkflowRunner:
         cmd = ["python", str(script_path)]
         if unit != "_all_":
             cmd.extend(["--stem", unit])
+        env = os.environ.copy()
+        env["ANIME_DUB_PROJECT_ROOT"] = str(self.path_manager.base_dir)
+        env["ANIME_DUB_CONFIG_DIR"] = str(self.path_manager.config_dir)
         try:
-            completed = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            completed = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
             if completed.stdout:
                 self.log(completed.stdout.strip())
             if completed.stderr:
