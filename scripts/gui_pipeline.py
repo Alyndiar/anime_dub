@@ -264,53 +264,58 @@ class PipelineGUI:
         self.apply_theme(self.state.theme)
 
     def _build_menu(self):
-        menu = tk.Menu(self.root)
+        self.menubar = tk.Menu(self.root)
 
-        file_menu = tk.Menu(menu, tearoff=0)
-        file_menu.add_command(label="Enregistrer l'état", command=self.save_state)
-        file_menu.add_command(label="Charger un état", command=self.load_state)
-        file_menu.add_command(label="Enregistrer sous…", command=self.save_state_as)
-        file_menu.add_separator()
-        file_menu.add_command(label="Quitter", command=self.root.destroy)
-        menu.add_cascade(label="Fichier", menu=file_menu)
+        self.file_menu = tk.Menu(self.menubar, tearoff=0)
+        self.file_menu.add_command(label="Enregistrer l'état", command=self.save_state)
+        self.file_menu.add_command(label="Charger un état", command=self.load_state)
+        self.file_menu.add_command(label="Enregistrer sous…", command=self.save_state_as)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Quitter", command=self.root.destroy)
+        self.menubar.add_cascade(label="Fichier", menu=self.file_menu)
 
-        view_menu = tk.Menu(menu, tearoff=0)
-        view_menu.add_command(label="Mode Nuit", command=lambda: self.apply_theme("dark"))
-        view_menu.add_command(label="Mode Jour", command=lambda: self.apply_theme("light"))
-        menu.add_cascade(label="Affichage", menu=view_menu)
+        self.view_menu = tk.Menu(self.menubar, tearoff=0)
+        self.view_menu.add_command(label="Mode Nuit", command=lambda: self.apply_theme("dark"))
+        self.view_menu.add_command(label="Mode Jour", command=lambda: self.apply_theme("light"))
+        self.menubar.add_cascade(label="Affichage", menu=self.view_menu)
 
-        options_menu = tk.Menu(menu, tearoff=0)
-        options_menu.add_command(label="Configurer les chemins…", command=self.open_paths_window)
-        options_menu.add_separator()
-        pause_menu = tk.Menu(options_menu, tearoff=0)
+        self.options_menu = tk.Menu(self.menubar, tearoff=0)
+        self.options_menu.add_command(label="Configurer les chemins…", command=self.open_paths_window)
+        self.options_menu.add_separator()
+        pause_menu = tk.Menu(self.options_menu, tearoff=0)
         pause_menu.add_command(label="Pause par fichier", command=lambda: self._set_pause("file"))
         pause_menu.add_command(label="Pause par répertoire", command=lambda: self._set_pause("directory"))
         pause_menu.add_command(label="Pause par étape", command=lambda: self._set_pause("step"))
-        options_menu.add_cascade(label="Mode de pause", menu=pause_menu)
-        menu.add_cascade(label="Options", menu=options_menu)
+        self.options_menu.add_cascade(label="Mode de pause", menu=pause_menu)
+        self.menubar.add_cascade(label="Options", menu=self.options_menu)
 
-        self.root.config(menu=menu)
+        self.root.config(menu=self.menubar)
 
     def _build_layout(self):
-        container = ttk.Frame(self.root, padding=10)
+        container = ttk.Frame(self.root, padding=10, style="Bg.TFrame")
         container.pack(fill=tk.BOTH, expand=True)
 
         # Section étapes
-        steps_frame = ttk.LabelFrame(container, text="Étapes du workflow")
+        steps_frame = ttk.LabelFrame(container, text="Étapes du workflow", style="Card.TLabelframe")
         steps_frame.pack(fill=tk.X, expand=False, pady=5)
 
         for idx, step in enumerate(STEPS):
             var = tk.BooleanVar(value=step.step_id in self.state.selected_steps)
             self.step_vars[step.step_id] = var
-            ttk.Checkbutton(steps_frame, text=f"{step.step_id} – {step.label} ({step.description})", variable=var).grid(row=idx, column=0, sticky="w")
+            ttk.Checkbutton(
+                steps_frame,
+                text=f"{step.step_id} – {step.label} ({step.description})",
+                variable=var,
+                style="Card.TCheckbutton",
+            ).grid(row=idx, column=0, sticky="w")
 
         # Section commandes
-        controls = ttk.Frame(container)
+        controls = ttk.Frame(container, style="Bg.TFrame")
         controls.pack(fill=tk.X, pady=5)
 
-        ttk.Button(controls, text="Démarrer / Reprendre", command=self.start_workflow).pack(side=tk.LEFT)
-        ttk.Button(controls, text="Pause", command=self.runner.pause).pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text="Arrêter", command=self.runner.stop).pack(side=tk.LEFT)
+        ttk.Button(controls, text="Démarrer / Reprendre", command=self.start_workflow, style="Accent.TButton").pack(side=tk.LEFT)
+        ttk.Button(controls, text="Pause", command=self.runner.pause, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
+        ttk.Button(controls, text="Arrêter", command=self.runner.stop, style="Accent.TButton").pack(side=tk.LEFT)
 
         ttk.Label(controls, text="Mode de pause :").pack(side=tk.LEFT, padx=(20, 4))
         self.pause_var = tk.StringVar(value=self.state.pause_mode)
@@ -318,7 +323,7 @@ class PipelineGUI:
         pause_combo.pack(side=tk.LEFT)
 
         # Log
-        log_frame = ttk.LabelFrame(container, text="Logs")
+        log_frame = ttk.LabelFrame(container, text="Logs", style="Card.TLabelframe")
         log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         self.log_widget = tk.Text(log_frame, height=15, wrap="word")
         self.log_widget.pack(fill=tk.BOTH, expand=True)
@@ -336,7 +341,7 @@ class PipelineGUI:
         self.paths_window.title("Chemins et répertoires")
         self.dialogs.add(self.paths_window)
         self.paths_window.protocol("WM_DELETE_WINDOW", lambda: self._close_dialog(self.paths_window))
-        container = ttk.Frame(self.paths_window, padding=10)
+        container = ttk.Frame(self.paths_window, padding=10, style="Bg.TFrame")
         container.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(container, text="Répertoire de base").grid(row=0, column=0, sticky="w")
@@ -397,34 +402,43 @@ class PipelineGUI:
 
     def apply_theme(self, theme: str):
         style = ttk.Style()
+        style.theme_use("clam")
         if theme == "dark":
             self.state.theme = "dark"
             bg = "#0f0f0f"
             fg = "#f2f2f2"
-            accent = "#1c1c1c"
-            entry_bg = "#1f1f1f"
+            accent = "#1f1f1f"
+            active = "#2a2a2a"
+            entry_bg = "#1c1c1c"
             self._apply_window_background(self.root, bg)
-            style.configure("TFrame", background=bg, foreground=fg)
+            style.configure("Bg.TFrame", background=bg, foreground=fg)
             style.configure("TLabel", background=bg, foreground=fg)
-            style.configure("TButton", background=accent, foreground=fg)
-            style.configure("TLabelFrame", background=bg, foreground=fg)
-            style.configure("TCheckbutton", background=bg, foreground=fg)
+            style.configure("Card.TLabelframe", background=bg, foreground=fg, bordercolor=accent)
+            style.configure("Card.TLabelframe.Label", background=bg, foreground=fg)
+            style.configure("Card.TCheckbutton", background=bg, foreground=fg)
+            style.configure("Accent.TButton", background=accent, foreground=fg, bordercolor=accent, focusthickness=0)
+            style.map("Accent.TButton", background=[("active", active)], foreground=[("active", fg)])
             style.configure("TEntry", fieldbackground=entry_bg, background=entry_bg, foreground=fg)
             style.configure("TCombobox", fieldbackground=entry_bg, background=entry_bg, foreground=fg)
-            self.log_widget.configure(bg="#1a1a1a", fg=fg, insertbackground=fg)
+            style.map("TCombobox", fieldbackground=[("readonly", entry_bg)], background=[("active", active)])
+            self.log_widget.configure(bg="#1a1a1a", fg=fg, insertbackground=fg, highlightbackground=bg, highlightcolor=bg)
         else:
             self.state.theme = "light"
             bg = "white"
             fg = "black"
+            accent = "#e0e0e0"
             self._apply_window_background(self.root, bg)
-            style.configure("TFrame", background=bg, foreground=fg)
+            style.configure("Bg.TFrame", background=bg, foreground=fg)
             style.configure("TLabel", background=bg, foreground=fg)
-            style.configure("TButton", background="#f0f0f0", foreground=fg)
-            style.configure("TLabelFrame", background=bg, foreground=fg)
-            style.configure("TCheckbutton", background=bg, foreground=fg)
+            style.configure("Card.TLabelframe", background=bg, foreground=fg, bordercolor=accent)
+            style.configure("Card.TLabelframe.Label", background=bg, foreground=fg)
+            style.configure("Card.TCheckbutton", background=bg, foreground=fg)
+            style.configure("Accent.TButton", background="#f0f0f0", foreground=fg, bordercolor=accent, focusthickness=0)
+            style.map("Accent.TButton", background=[("active", "#e5e5e5")], foreground=[("active", fg)])
             style.configure("TEntry", fieldbackground="white", background="white", foreground=fg)
             style.configure("TCombobox", fieldbackground="white", background="white", foreground=fg)
-            self.log_widget.configure(bg="white", fg=fg, insertbackground=fg)
+            self.log_widget.configure(bg="white", fg=fg, insertbackground=fg, highlightbackground=bg, highlightcolor=bg)
+        self._style_menus(bg, fg)
         for dialog in list(self.dialogs):
             if dialog.winfo_exists():
                 self._apply_window_background(dialog, bg if self.state.theme == "dark" else "white")
@@ -433,6 +447,19 @@ class PipelineGUI:
     def _apply_window_background(self, window: tk.Tk | tk.Toplevel, color: str | None = None):
         bg_color = color or ("#0f0f0f" if self.state.theme == "dark" else "white")
         window.configure(bg=bg_color)
+
+    def _style_menus(self, bg: str, fg: str):
+        menu_opts = {
+            "background": bg,
+            "foreground": fg,
+            "activebackground": bg,
+            "activeforeground": fg,
+            "relief": "flat",
+            "borderwidth": 0,
+        }
+        for menu in [self.menubar, self.file_menu, self.view_menu, self.options_menu]:
+            if menu:
+                menu.configure(**menu_opts)
 
     def _ensure_path_vars(self):
         if self.path_vars:
