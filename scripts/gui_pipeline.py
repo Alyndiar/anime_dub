@@ -164,6 +164,9 @@ class WorkflowState:
         self.current_index = 0
         self.path_state = {"base_dir": str(PROJECT_ROOT), "overrides": {}, "config_dir": str(PROJECT_ROOT / "config")}
         self.project = {"name": None, "anime_title": None, "base_dir": str(PROJECT_ROOT)}
+        self.selection_mode = "all"  # values: all, single, selection
+        self.single_stem = None
+        self.selected_units: list[str] = []
 
     def load(self, path: Path = STATE_PATH) -> None:
         if not path.exists():
@@ -176,6 +179,9 @@ class WorkflowState:
         self.current_index = int(data.get("current_index", 0))
         self.path_state = data.get("paths", self.path_state)
         self.project = data.get("project", self.project)
+        self.selection_mode = data.get("selection_mode", self.selection_mode)
+        self.single_stem = data.get("single_stem")
+        self.selected_units = data.get("selected_units", self.selected_units)
 
     def save(self, path: Path = STATE_PATH) -> None:
         payload = {
@@ -186,6 +192,9 @@ class WorkflowState:
             "current_index": self.current_index,
             "paths": self.path_state,
             "project": self.project,
+            "selection_mode": self.selection_mode,
+            "single_stem": self.single_stem,
+            "selected_units": self.selected_units,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -200,6 +209,15 @@ class WorkflowRunner:
         self.thread: threading.Thread | None = None
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
+
+    def _filter_units(self, units: list[str]) -> list[str]:
+        if not units:
+            return []
+        if self.state.selection_mode == "single" and self.state.single_stem:
+            return [u for u in units if u == self.state.single_stem]
+        if self.state.selection_mode == "selection" and self.state.selected_units:
+            return [u for u in units if u in self.state.selected_units]
+        return units
 
     def start(self, selected_steps: list[str], pause_mode: str):
         if self.thread and self.thread.is_alive():
@@ -225,7 +243,10 @@ class WorkflowRunner:
                 else:
                     continue
 
-            units = step.list_units(self.path_manager)
+            units = self._filter_units(step.list_units(self.path_manager))
+            if not units:
+                self.log(f"Aucun fichier sélectionné pour {step.label}, étape ignorée.")
+                continue
             start_index = self.state.current_index if self.state.current_step == step.step_id else 0
             for idx, unit in enumerate(units):
                 if idx < start_index:
@@ -320,6 +341,10 @@ class PipelineGUI:
         self.base_var = tk.StringVar(value=str(self.path_manager.base_dir))
         self.base_trace_added = False
         self.dialogs: set[tk.Toplevel] = set()
+        self.selection_mode_var = tk.StringVar(value=self.state.selection_mode)
+        self.single_stem_var = tk.StringVar(value=self.state.single_stem or "")
+        self.selected_units: list[str] = list(self.state.selected_units)
+        self.available_stems: list[str] = []
 
         self._build_menu()
         self._build_layout()
@@ -389,6 +414,46 @@ class PipelineGUI:
                 style="Card.TCheckbutton",
             ).grid(row=idx, column=0, sticky="w")
 
+        # Section sélection d'épisodes
+        self._refresh_available_stems()
+        selection_frame = ttk.LabelFrame(container, text="Ciblage des épisodes", style="Card.TLabelframe")
+        selection_frame.pack(fill=tk.X, expand=False, pady=5)
+
+        ttk.Radiobutton(
+            selection_frame,
+            text="Tous les épisodes", 
+            variable=self.selection_mode_var,
+            value="all",
+            command=self._on_selection_mode_change,
+            style="Card.TRadiobutton",
+        ).grid(row=0, column=0, sticky="w")
+
+        ttk.Radiobutton(
+            selection_frame,
+            text="1 seul épisode",
+            variable=self.selection_mode_var,
+            value="single",
+            command=self._on_selection_mode_change,
+            style="Card.TRadiobutton",
+        ).grid(row=1, column=0, sticky="w")
+        self.single_combo = ttk.Combobox(selection_frame, textvariable=self.single_stem_var, values=self.available_stems, width=40)
+        self.single_combo.grid(row=1, column=1, padx=6, sticky="w")
+        self.single_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_single_change())
+        ttk.Button(selection_frame, text="Rafraîchir", command=self._refresh_available_stems, style="Accent.TButton").grid(row=1, column=2, padx=4)
+
+        ttk.Radiobutton(
+            selection_frame,
+            text="Sélection par fichiers…",
+            variable=self.selection_mode_var,
+            value="selection",
+            command=self._on_selection_mode_change,
+            style="Card.TRadiobutton",
+        ).grid(row=2, column=0, sticky="w")
+        ttk.Button(selection_frame, text="Choisir des fichiers", command=self._choose_units_from_files, style="Accent.TButton").grid(row=2, column=1, sticky="w", padx=6)
+        self.selection_label = ttk.Label(selection_frame, text=self._selection_summary())
+        self.selection_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        selection_frame.columnconfigure(1, weight=1)
+
         # Section commandes
         controls = ttk.Frame(container, style="Bg.TFrame")
         controls.pack(fill=tk.X, pady=5)
@@ -411,6 +476,29 @@ class PipelineGUI:
     def log(self, message: str):
         self.log_widget.insert(tk.END, message + "\n")
         self.log_widget.see(tk.END)
+
+    def _normalize_stem(self, value: str) -> str:
+        stem = Path(value).stem
+        return (
+            stem.replace("_mono16k", "")
+            .replace("_fr", "")
+            .replace("_segments", "")
+            .replace("_fr_voices", "")
+            .replace("_fr_full", "")
+        )
+
+    def _refresh_available_stems(self):
+        candidate_step = STEPS[0]
+        stems = [u for u in candidate_step.list_units(self.path_manager) if u != "_all_"]
+        stems = [self._normalize_stem(s) for s in stems]
+        stems = sorted(set(stems))
+        self.available_stems = stems
+        if hasattr(self, "single_combo"):
+            self.single_combo.configure(values=self.available_stems)
+        if stems and not self.single_stem_var.get():
+            self.single_stem_var.set(stems[0])
+        if hasattr(self, "selection_label"):
+            self.selection_label.configure(text=self._selection_summary())
 
     def open_paths_window(self):
         if hasattr(self, "paths_window") and self.paths_window.winfo_exists():
@@ -475,6 +563,9 @@ class PipelineGUI:
         self.state.selected_steps = selected
         self.state.path_state = self.path_manager.to_state()
         self.state.pause_mode = self.pause_var.get()
+        self.state.selection_mode = self.selection_mode_var.get()
+        self.state.single_stem = self.single_stem_var.get() or None
+        self.state.selected_units = self.selected_units
         self._save_state()
         self.runner.start(selected, self.pause_var.get())
 
@@ -505,6 +596,12 @@ class PipelineGUI:
         self._refresh_path_vars()
         for step in STEPS:
             self.step_vars[step.step_id].set(step.step_id in self.state.selected_steps)
+        self.selection_mode_var.set(self.state.selection_mode)
+        self.single_stem_var.set(self.state.single_stem or "")
+        self.selected_units = list(self.state.selected_units)
+        self._refresh_available_stems()
+        if hasattr(self, "selection_label"):
+            self.selection_label.configure(text=self._selection_summary())
         self.log("État chargé.")
         self._update_title()
 
@@ -513,6 +610,51 @@ class PipelineGUI:
         if project_path and project_path != PROJECT_ROOT:
             return project_path / "config/gui_state.json"
         return STATE_PATH
+
+    def _on_selection_mode_change(self):
+        mode = self.selection_mode_var.get()
+        if mode == "single" and not self.single_stem_var.get() and self.available_stems:
+            self.single_stem_var.set(self.available_stems[0])
+        self.selection_label.configure(text=self._selection_summary())
+        self.state.selection_mode = mode
+        self.state.single_stem = self.single_stem_var.get() or None
+        self.state.selected_units = self.selected_units
+        self._save_state()
+
+    def _selection_summary(self) -> str:
+        mode = self.selection_mode_var.get()
+        if mode == "all":
+            return "Tous les épisodes seront traités."
+        if mode == "single":
+            return f"Épisode ciblé : {self.single_stem_var.get() or 'aucun'}"
+        return f"Épisodes sélectionnés : {', '.join(self.selected_units) if self.selected_units else 'aucun'}"
+
+    def _on_single_change(self):
+        self.selection_mode_var.set("single")
+        self.selection_label.configure(text=self._selection_summary())
+        self.state.single_stem = self.single_stem_var.get() or None
+        self.state.selection_mode = "single"
+        self._save_state()
+
+    def _choose_units_from_files(self):
+        try:
+            initial_dir = self.path_manager.get_path("episodes_raw_dir")
+        except Exception:
+            initial_dir = self.path_manager.base_dir
+        filenames = filedialog.askopenfilenames(initialdir=str(initial_dir))
+        if not filenames:
+            return
+        stems = [self._normalize_stem(name) for name in filenames]
+        unique = []
+        for stem in stems:
+            if stem not in unique:
+                unique.append(stem)
+        self.selected_units = unique
+        self.selection_mode_var.set("selection")
+        self.selection_label.configure(text=self._selection_summary())
+        self.state.selected_units = self.selected_units
+        self.state.selection_mode = "selection"
+        self._save_state()
 
     def _save_state(self) -> Path:
         path = self._current_state_path()
@@ -711,6 +853,7 @@ class PipelineGUI:
             style.configure("Card.TLabelframe", background=bg, foreground=fg, bordercolor=accent)
             style.configure("Card.TLabelframe.Label", background=bg, foreground=fg)
             style.configure("Card.TCheckbutton", background=bg, foreground=fg)
+            style.configure("Card.TRadiobutton", background=bg, foreground=fg)
             style.configure("TButton", background=accent, foreground=fg, bordercolor=accent, focusthickness=0)
             style.map("TButton", background=[("active", active)], foreground=[("active", fg)])
             style.configure("Accent.TButton", background=accent, foreground=fg, bordercolor=accent, focusthickness=0)
@@ -730,6 +873,7 @@ class PipelineGUI:
             style.configure("Card.TLabelframe", background=bg, foreground=fg, bordercolor=accent)
             style.configure("Card.TLabelframe.Label", background=bg, foreground=fg)
             style.configure("Card.TCheckbutton", background=bg, foreground=fg)
+            style.configure("Card.TRadiobutton", background=bg, foreground=fg)
             style.configure("TButton", background="#f4f4f4", foreground=fg, bordercolor=accent, focusthickness=0)
             style.map("TButton", background=[("active", "#e5e5e5")], foreground=[("active", fg)])
             style.configure("Accent.TButton", background="#f0f0f0", foreground=fg, bordercolor=accent, focusthickness=0)
@@ -776,6 +920,7 @@ class PipelineGUI:
         for key, var in self.path_vars.items():
             var.set(self.path_manager.as_display_value(key))
             self.path_last_values[key] = var.get()
+        self._refresh_available_stems()
 
     def _close_dialog(self, dialog: tk.Toplevel):
         if dialog in self.dialogs:
