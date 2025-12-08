@@ -254,8 +254,10 @@ class PipelineGUI:
         self.path_manager = PathManager(base_dir=base_dir, overrides=overrides)
 
         self.runner = WorkflowRunner(self.log, self.state, self.path_manager)
-        self.path_vars: Dict[str, tk.StringVar] = {}
         self.step_vars: Dict[str, tk.BooleanVar] = {}
+        self.path_vars: Dict[str, tk.StringVar] = {}
+        self.base_var = tk.StringVar(value=str(self.path_manager.base_dir))
+        self.dialogs: set[tk.Toplevel] = set()
 
         self._build_menu()
         self._build_layout()
@@ -277,37 +279,21 @@ class PipelineGUI:
         view_menu.add_command(label="Mode Jour", command=lambda: self.apply_theme("light"))
         menu.add_cascade(label="Affichage", menu=view_menu)
 
-        pause_menu = tk.Menu(menu, tearoff=0)
+        options_menu = tk.Menu(menu, tearoff=0)
+        options_menu.add_command(label="Configurer les chemins…", command=self.open_paths_window)
+        options_menu.add_separator()
+        pause_menu = tk.Menu(options_menu, tearoff=0)
         pause_menu.add_command(label="Pause par fichier", command=lambda: self._set_pause("file"))
         pause_menu.add_command(label="Pause par répertoire", command=lambda: self._set_pause("directory"))
         pause_menu.add_command(label="Pause par étape", command=lambda: self._set_pause("step"))
-        menu.add_cascade(label="Options", menu=pause_menu)
+        options_menu.add_cascade(label="Mode de pause", menu=pause_menu)
+        menu.add_cascade(label="Options", menu=options_menu)
 
         self.root.config(menu=menu)
 
     def _build_layout(self):
         container = ttk.Frame(self.root, padding=10)
         container.pack(fill=tk.BOTH, expand=True)
-
-        # Section chemins
-        paths_frame = ttk.LabelFrame(container, text="Chemins et répertoires")
-        paths_frame.pack(fill=tk.X, expand=False, pady=5)
-
-        base_var = tk.StringVar(value=str(self.path_manager.base_dir))
-        self.base_var = base_var
-        ttk.Label(paths_frame, text="Répertoire de base").grid(row=0, column=0, sticky="w")
-        ttk.Entry(paths_frame, textvariable=base_var, width=80).grid(row=0, column=1, sticky="ew")
-        ttk.Button(paths_frame, text="Parcourir", command=self._choose_base_dir).grid(row=0, column=2, padx=4)
-        paths_frame.columnconfigure(1, weight=1)
-
-        row = 1
-        for key in load_paths_config().keys():
-            self.path_vars[key] = tk.StringVar(value=self.path_manager.as_display_value(key))
-            ttk.Label(paths_frame, text=key).grid(row=row, column=0, sticky="w")
-            ttk.Entry(paths_frame, textvariable=self.path_vars[key], width=80).grid(row=row, column=1, sticky="ew")
-            row += 1
-
-        ttk.Button(paths_frame, text="Enregistrer paths.yaml", command=self._save_paths_yaml).grid(row=row, column=0, columnspan=3, pady=4, sticky="e")
 
         # Section étapes
         steps_frame = ttk.LabelFrame(container, text="Étapes du workflow")
@@ -341,22 +327,32 @@ class PipelineGUI:
         self.log_widget.insert(tk.END, message + "\n")
         self.log_widget.see(tk.END)
 
-    def _choose_base_dir(self):
-        chosen = filedialog.askdirectory()
-        if chosen:
-            self.base_var.set(chosen)
-            self.path_manager.base_dir = Path(chosen)
-            self.state.path_state["base_dir"] = chosen
-            self.state.save()
+    def open_paths_window(self):
+        if hasattr(self, "paths_window") and self.paths_window.winfo_exists():
+            self.paths_window.focus_set()
+            return
 
-    def _save_paths_yaml(self):
+        self.paths_window = tk.Toplevel(self.root)
+        self.paths_window.title("Chemins et répertoires")
+        self.dialogs.add(self.paths_window)
+        self.paths_window.protocol("WM_DELETE_WINDOW", lambda: self._close_dialog(self.paths_window))
+        container = ttk.Frame(self.paths_window, padding=10)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Répertoire de base").grid(row=0, column=0, sticky="w")
+        ttk.Entry(container, textvariable=self.base_var, width=80).grid(row=0, column=1, sticky="ew")
+        ttk.Button(container, text="Parcourir", command=self._choose_base_dir).grid(row=0, column=2, padx=4)
+        container.columnconfigure(1, weight=1)
+
+        self._ensure_path_vars()
+        row = 1
         for key, var in self.path_vars.items():
-            self.path_manager.update_value(key, var.get())
-        self.path_manager.base_dir = Path(self.base_var.get())
-        self.state.path_state = self.path_manager.to_state()
-        self.path_manager.save_to_yaml()
-        self.state.save()
-        messagebox.showinfo("Chemins", "paths.yaml mis à jour et enregistré.")
+            ttk.Label(container, text=key).grid(row=row, column=0, sticky="w")
+            ttk.Entry(container, textvariable=var, width=80).grid(row=row, column=1, sticky="ew")
+            row += 1
+
+        ttk.Button(container, text="Enregistrer paths.yaml", command=self._save_paths_yaml).grid(row=row, column=0, columnspan=3, pady=6, sticky="e")
+        self._apply_window_background(self.paths_window)
 
     def _set_pause(self, mode: str):
         self.pause_var.set(mode)
@@ -394,9 +390,7 @@ class PipelineGUI:
         self.pause_var.set(self.state.pause_mode)
         self.apply_theme(self.state.theme)
         self.path_manager = PathManager(base_dir=Path(self.state.path_state.get("base_dir", PROJECT_ROOT)), overrides=self.state.path_state.get("overrides", {}))
-        for key, var in self.path_vars.items():
-            var.set(self.path_manager.as_display_value(key))
-        self.base_var.set(str(self.path_manager.base_dir))
+        self._refresh_path_vars()
         for step in STEPS:
             self.step_vars[step.step_id].set(step.step_id in self.state.selected_steps)
         self.log("État chargé.")
@@ -405,23 +399,76 @@ class PipelineGUI:
         style = ttk.Style()
         if theme == "dark":
             self.state.theme = "dark"
-            self.root.configure(bg="#1f1f1f")
-            style.configure("TFrame", background="#1f1f1f", foreground="white")
-            style.configure("TLabel", background="#1f1f1f", foreground="white")
-            style.configure("TButton", background="#333", foreground="white")
-            style.configure("TLabelFrame", background="#1f1f1f", foreground="white")
-            style.configure("TCheckbutton", background="#1f1f1f", foreground="white")
-            self.log_widget.configure(bg="#2a2a2a", fg="white")
+            bg = "#0f0f0f"
+            fg = "#f2f2f2"
+            accent = "#1c1c1c"
+            entry_bg = "#1f1f1f"
+            self._apply_window_background(self.root, bg)
+            style.configure("TFrame", background=bg, foreground=fg)
+            style.configure("TLabel", background=bg, foreground=fg)
+            style.configure("TButton", background=accent, foreground=fg)
+            style.configure("TLabelFrame", background=bg, foreground=fg)
+            style.configure("TCheckbutton", background=bg, foreground=fg)
+            style.configure("TEntry", fieldbackground=entry_bg, background=entry_bg, foreground=fg)
+            style.configure("TCombobox", fieldbackground=entry_bg, background=entry_bg, foreground=fg)
+            self.log_widget.configure(bg="#1a1a1a", fg=fg, insertbackground=fg)
         else:
             self.state.theme = "light"
-            self.root.configure(bg="white")
-            style.configure("TFrame", background="white", foreground="black")
-            style.configure("TLabel", background="white", foreground="black")
-            style.configure("TButton", background="#f0f0f0", foreground="black")
-            style.configure("TLabelFrame", background="white", foreground="black")
-            style.configure("TCheckbutton", background="white", foreground="black")
-            self.log_widget.configure(bg="white", fg="black")
+            bg = "white"
+            fg = "black"
+            self._apply_window_background(self.root, bg)
+            style.configure("TFrame", background=bg, foreground=fg)
+            style.configure("TLabel", background=bg, foreground=fg)
+            style.configure("TButton", background="#f0f0f0", foreground=fg)
+            style.configure("TLabelFrame", background=bg, foreground=fg)
+            style.configure("TCheckbutton", background=bg, foreground=fg)
+            style.configure("TEntry", fieldbackground="white", background="white", foreground=fg)
+            style.configure("TCombobox", fieldbackground="white", background="white", foreground=fg)
+            self.log_widget.configure(bg="white", fg=fg, insertbackground=fg)
+        for dialog in list(self.dialogs):
+            if dialog.winfo_exists():
+                self._apply_window_background(dialog, bg if self.state.theme == "dark" else "white")
         self.state.save()
+
+    def _apply_window_background(self, window: tk.Tk | tk.Toplevel, color: str | None = None):
+        bg_color = color or ("#0f0f0f" if self.state.theme == "dark" else "white")
+        window.configure(bg=bg_color)
+
+    def _ensure_path_vars(self):
+        if self.path_vars:
+            return
+        for key in load_paths_config().keys():
+            self.path_vars[key] = tk.StringVar(value=self.path_manager.as_display_value(key))
+
+    def _refresh_path_vars(self):
+        self.base_var.set(str(self.path_manager.base_dir))
+        if not self.path_vars:
+            self._ensure_path_vars()
+        for key, var in self.path_vars.items():
+            var.set(self.path_manager.as_display_value(key))
+
+    def _close_dialog(self, dialog: tk.Toplevel):
+        if dialog in self.dialogs:
+            self.dialogs.remove(dialog)
+        dialog.destroy()
+
+    def _choose_base_dir(self):
+        chosen = filedialog.askdirectory()
+        if chosen:
+            self.base_var.set(chosen)
+            self.path_manager.base_dir = Path(chosen)
+            self.state.path_state["base_dir"] = chosen
+            self.state.save()
+
+    def _save_paths_yaml(self):
+        self._ensure_path_vars()
+        for key, var in self.path_vars.items():
+            self.path_manager.update_value(key, var.get())
+        self.path_manager.base_dir = Path(self.base_var.get())
+        self.state.path_state = self.path_manager.to_state()
+        self.path_manager.save_to_yaml()
+        self.state.save()
+        messagebox.showinfo("Chemins", "paths.yaml mis à jour et enregistré.")
 
 
 def main():
