@@ -104,7 +104,7 @@ Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de con
 Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directement avec `launcher.bat` sous Windows :
 
 - menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
-- ciblage des épisodes : traitement complet, mode « 1 seul épisode » ou sélection multi-fichiers via un explorateur ;
+- ciblage des épisodes : traitement complet, mode « 1 seul épisode » avec sélection de fichier dédiée ou sélection multi-fichiers via un explorateur ;
 - gestion de projets (Créer/Charger/Sauvegarder/Fermer) avec un répertoire de base par projet, ses fichiers de config dédiés dans `<projet>/config/` et un état persistant par projet ;
 - création guidée : saisie du titre d'animé et du nom de projet, proposition d'un dossier dédié (inexistant) pré-rempli avec le fichier `<nom_du_projet>.yaml`, les configs par défaut et la hiérarchie `data/` ;
 - modification hiérarchique des chemins via le menu « Options → Configurer les chemins… » : chaque entrée dispose d'un bouton « … » qui ouvre un sélecteur ancré sur le répertoire parent résolu ;

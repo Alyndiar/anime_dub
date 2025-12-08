@@ -436,10 +436,13 @@ class PipelineGUI:
             command=self._on_selection_mode_change,
             style="Card.TRadiobutton",
         ).grid(row=1, column=0, sticky="w")
-        self.single_combo = ttk.Combobox(selection_frame, textvariable=self.single_stem_var, values=self.available_stems, width=40)
-        self.single_combo.grid(row=1, column=1, padx=6, sticky="w")
+        single_container = ttk.Frame(selection_frame, style="Bg.TFrame")
+        single_container.grid(row=1, column=1, columnspan=2, sticky="w")
+        self.single_combo = ttk.Combobox(single_container, textvariable=self.single_stem_var, values=self.available_stems, width=40)
+        self.single_combo.grid(row=0, column=0, padx=(6, 4), sticky="w")
         self.single_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_single_change())
-        ttk.Button(selection_frame, text="Rafraîchir", command=self._refresh_available_stems, style="Accent.TButton").grid(row=1, column=2, padx=4)
+        ttk.Button(single_container, text="Parcourir…", command=self._choose_single_unit_from_file, style="Accent.TButton").grid(row=0, column=1, padx=(0, 4))
+        ttk.Button(single_container, text="Rafraîchir", command=self._refresh_available_stems, style="Accent.TButton").grid(row=0, column=2)
 
         ttk.Radiobutton(
             selection_frame,
@@ -654,6 +657,22 @@ class PipelineGUI:
         self.selection_label.configure(text=self._selection_summary())
         self.state.selected_units = self.selected_units
         self.state.selection_mode = "selection"
+        self._save_state()
+
+    def _choose_single_unit_from_file(self):
+        try:
+            initial_dir = self.path_manager.get_path("episodes_raw_dir")
+        except Exception:
+            initial_dir = self.path_manager.base_dir
+        filename = filedialog.askopenfilename(initialdir=str(initial_dir))
+        if not filename:
+            return
+        stem = self._normalize_stem(filename)
+        self.single_stem_var.set(stem)
+        self.selection_mode_var.set("single")
+        self.selection_label.configure(text=self._selection_summary())
+        self.state.single_stem = stem
+        self.state.selection_mode = "single"
         self._save_state()
 
     def _save_state(self) -> Path:
