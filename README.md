@@ -63,6 +63,7 @@ Arborescence principale :
 
 ```text
 anime-dub/
+├─ launcher.bat             # Lance le GUI directement (Windows)
 ├─ data/
 │  ├─ episodes_raw/          # Vidéos source (non versionnées)
 │  ├─ audio_raw/             # Audios extraits
@@ -100,7 +101,7 @@ Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de con
 - `ensure_directories([...])`: crée (si besoin) les répertoires référencés et renvoie leur mapping.
 - `load_characters_config()` / `load_xtts_config()`: chargent les paramètres vocaux et XTTS.
 
-Une interface GUI est disponible via `python scripts/gui_pipeline.py` :
+Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directement avec `launcher.bat` sous Windows :
 
 - menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
 - modification en direct des chemins définis dans `config/paths.yaml` (base par défaut = racine du projet) ;
