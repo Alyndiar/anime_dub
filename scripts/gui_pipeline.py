@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import threading
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -452,6 +453,8 @@ class PipelineGUI:
         overrides = self.state.path_state.get("overrides", {})
         config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
         self.path_manager = PathManager(base_dir=base_dir, overrides=overrides, config_dir=config_dir)
+        self.log_lock = threading.Lock()
+        self.log_file = self._compute_log_path()
 
         self.runner = WorkflowRunner(self.log, self.state, self.path_manager)
         self.step_vars: Dict[str, tk.BooleanVar] = {}
@@ -470,6 +473,7 @@ class PipelineGUI:
         self._build_menu()
         self._build_layout()
         self._update_title()
+        self._update_log_destination()
         self.apply_theme(self.state.theme)
 
     def _maybe_load_project_state(self):
@@ -609,8 +613,25 @@ class PipelineGUI:
         self.log_widget.pack(fill=tk.BOTH, expand=True)
 
     def log(self, message: str):
-        self.log_widget.insert(tk.END, message + "\n")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted = f"[{timestamp}] {message}"
+        self.log_widget.insert(tk.END, formatted + "\n")
         self.log_widget.see(tk.END)
+        try:
+            with self.log_lock:
+                self.log_file.parent.mkdir(parents=True, exist_ok=True)
+                self.log_file.open("a", encoding="utf-8").write(formatted + "\n")
+        except OSError:
+            pass
+
+    def _compute_log_path(self) -> Path:
+        base = getattr(self, "path_manager", None)
+        if base:
+            return base.base_dir / "logs" / "gui_pipeline.log"
+        return PROJECT_ROOT / "logs" / "gui_pipeline.log"
+
+    def _update_log_destination(self):
+        self.log_file = self._compute_log_path()
 
     def _normalize_stem(self, value: str) -> str:
         stem = Path(value).stem
@@ -736,6 +757,7 @@ class PipelineGUI:
         self.anime_title = self.state.project.get("anime_title")
         self.project_config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
         self.path_manager = PathManager(base_dir=self.project_base, overrides=self.state.path_state.get("overrides", {}), config_dir=self.project_config_dir)
+        self._update_log_destination()
         self._refresh_path_vars()
         for step in STEPS:
             self.step_vars[step.step_id].set(step.step_id in self.state.selected_steps)
@@ -858,6 +880,7 @@ class PipelineGUI:
         self.project_base = base_path
         self.project_config_dir = base_path / "config"
         self.path_manager = PathManager(base_dir=base_path, overrides={}, config_dir=self.project_config_dir)
+        self._update_log_destination()
         self.state.path_state = self.path_manager.to_state()
         self.base_var.set(str(base_path))
         self._refresh_path_vars(reset=True)
@@ -883,6 +906,7 @@ class PipelineGUI:
         overrides = self.state.path_state.get("overrides", {})
         config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
         self.path_manager = PathManager(base_dir=base_path, overrides=overrides, config_dir=config_dir)
+        self._update_log_destination()
         self.base_var.set(str(base_path))
         self._refresh_path_vars(reset=True)
         self._update_title()
@@ -915,6 +939,7 @@ class PipelineGUI:
         self.project_config_dir = PROJECT_ROOT / "config"
         self.state.project = {"name": None, "anime_title": None, "base_dir": str(PROJECT_ROOT)}
         self.path_manager = PathManager(base_dir=PROJECT_ROOT, overrides={}, config_dir=self.project_config_dir)
+        self._update_log_destination()
         self.state.path_state = self.path_manager.to_state()
         self.base_var.set(str(PROJECT_ROOT))
         self._refresh_path_vars(reset=True)
@@ -1097,6 +1122,7 @@ class PipelineGUI:
             self.path_manager.base_dir = Path(chosen)
             self.state.path_state["base_dir"] = chosen
             self._refresh_all_resolved()
+            self._update_log_destination()
             self._save_state()
 
     def _on_base_change(self):
@@ -1109,6 +1135,7 @@ class PipelineGUI:
         self.path_manager.base_dir = new_base
         self.state.path_state["base_dir"] = str(new_base)
         self._refresh_all_resolved()
+        self._update_log_destination()
         self._save_state()
 
     def _save_paths_yaml(self):
@@ -1118,6 +1145,7 @@ class PipelineGUI:
         self.path_manager.base_dir = Path(self.base_var.get())
         self.state.path_state = self.path_manager.to_state()
         self.path_manager.save_to_yaml()
+        self._update_log_destination()
         self._save_state()
         messagebox.showinfo("Chemins", "paths.yaml mis à jour et enregistré.")
 
