@@ -11,6 +11,7 @@ diarization_dir: "data/diarization"
 
 transcripts_root: "data/transcripts"
 whisper_json_dir: "data/transcripts/whisper_json"
+whisper_json_fr_dir: "data/transcripts/whisper_json_fr"
 zh_srt_dir: "data/transcripts/zh_srt"
 fr_srt_dir: "data/transcripts/fr_srt"
 

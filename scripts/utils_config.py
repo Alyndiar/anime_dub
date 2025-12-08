@@ -8,7 +8,7 @@ Utilitaires pour charger les fichiers de configuration YAML du projet.
 """
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 import yaml
 
 
@@ -90,3 +90,29 @@ def get_data_path(key: str) -> Path:
     if key not in paths_cfg:
         raise KeyError(f"Clé '{key}' absente de paths.yaml")
     return PROJECT_ROOT / paths_cfg[key]
+
+
+def get_path_map(keys: Iterable[str]) -> Dict[str, Path]:
+    """
+    Renvoie un dictionnaire {clef: Path} pour une sélection de clefs
+    définies dans ``config/paths.yaml``.
+
+    :param keys: liste de clefs à résoudre (ex: ["audio_raw_dir", "diarization_dir"]).
+    :return: dictionnaire clef -> pathlib.Path
+    """
+    return {key: get_data_path(key) for key in keys}
+
+
+def ensure_directories(keys: Iterable[str]) -> Dict[str, Path]:
+    """
+    Crée (si nécessaire) les répertoires correspondant aux clefs fournies
+    et renvoie le mapping des chemins résolus. Utile pour initialiser la
+    structure attendue avant l'exécution d'un script ou d'une future GUI.
+
+    :param keys: clefs de ``config/paths.yaml`` à créer si absentes.
+    :return: dictionnaire clef -> pathlib.Path existants/garantis.
+    """
+    paths = get_path_map(keys)
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+    return paths

@@ -70,6 +70,7 @@ anime-dub/
 │  ├─ diarization/           # Résultats pyannote
 │  ├─ transcripts/
 │  │  ├─ whisper_json/       # Segments Whisper (ZH)
+│  │  ├─ whisper_json_fr/    # Segments Whisper traduits (ZH→FR)
 │  │  ├─ zh_srt/             # Sous-titres ZH
 │  │  └─ fr_srt/             # Sous-titres FR
 │  ├─ segments/              # Segments texte + personnage
@@ -91,3 +92,11 @@ anime-dub/
    ├─ paths.yaml
    ├─ characters.yaml
    └─ xtts_config.yaml
+
+Les scripts utilisent désormais `scripts/utils_config.py` pour charger ces fichiers de config et résoudre les chemins depuis la racine du projet. Les fonctions principales :
+
+- `get_data_path(key)`: récupère un `Path` à partir d'une clef définie dans `config/paths.yaml`.
+- `ensure_directories([...])`: crée (si besoin) les répertoires référencés et renvoie leur mapping.
+- `load_characters_config()` / `load_xtts_config()`: chargent les paramètres vocaux et XTTS.
+
+Cette factorisation prépare l'ajout d'une future interface GUI qui orchestrera l'exécution des étapes et l'édition des paramètres.
