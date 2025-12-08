@@ -1,4 +1,4 @@
-# scripts/08_mix_audio.py
+# scripts/09_mix_audio.py
 import argparse
 import logging
 import os

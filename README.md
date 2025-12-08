@@ -82,15 +82,16 @@ anime-dub/
 │  └─ episodes_dubbed/       # Vidéos remuxées avec piste FR
 ├─ scripts/
 │  ├─ 01_extract_audio.py
-│  ├─ 02_diarize.py
-│  ├─ 03_whisper_transcribe.py
-│  ├─ 04_translate_nllb.py
-│  ├─ 05_build_speaker_bank.py
-│  ├─ 06_assign_characters.py
-│  ├─ 07_synthesize_xtts.py
-│  ├─ 08_mix_audio.py
-│  ├─ 09_remux.py
-│  └─ gui_pipeline.py        # GUI pour orchestrer les étapes 01→09
+│  ├─ 02_separate_stems.py
+│  ├─ 03_diarize.py
+│  ├─ 04_whisper_transcribe.py
+│  ├─ 05_translate_nllb.py
+│  ├─ 06_build_speaker_bank.py
+│  ├─ 07_assign_characters.py
+│  ├─ 08_synthesize_xtts.py
+│  ├─ 09_mix_audio.py
+│  ├─ 10_remux.py
+│  └─ gui_pipeline.py        # GUI pour orchestrer les étapes 01→10
 └─ config/
    ├─ paths.yaml
    ├─ characters.yaml
@@ -104,7 +105,7 @@ Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de con
 
 Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directement avec `launcher.bat` sous Windows :
 
-- menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
+- menus pour lancer les étapes 01→10 avec arrêt automatique après chaque fichier, répertoire ou étape ;
 - ciblage des épisodes : traitement complet, mode « 1 seul épisode » avec sélection de fichier dédiée ou sélection multi-fichiers via un explorateur ;
 - gestion de projets (Créer/Charger/Sauvegarder/Fermer) avec un répertoire de base par projet, ses fichiers de config dédiés dans `<projet>/config/` et un état persistant par projet ;
 - création guidée : saisie du titre d'animé et du nom de projet, proposition d'un dossier dédié (inexistant) pré-rempli avec le fichier `<nom_du_projet>.yaml`, les configs par défaut et la hiérarchie `data/` ;
@@ -113,7 +114,31 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 - lors de l'exécution d'une étape, le GUI exporte les variables d'environnement `ANIME_DUB_PROJECT_ROOT` et `ANIME_DUB_CONFIG_DIR` pour que les helpers (`get_data_path`, `ensure_directories`, etc.) résolvent correctement les chemins du projet sélectionné ;
 - option « Verbose » dans le menu Options ou la barre de commandes pour tracer en détail les appels des scripts (commande, environnement `ANIME_DUB_VERBOSE`, paramètre `--verbose` lorsque disponible) ;
 - les logs sont affichés dans la fenêtre et simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
-- reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).
+- reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/04_whisper_transcribe.py --stem episode_001`).
+
+### Étape 02 : séparation voix / instrumental
+
+- Entrée attendue : les WAV complets (`*_full.wav`) produits par `01_extract_audio` dans `data/audio_raw/`.
+- Sortie : deux fichiers par stem dans `data/audio_stems/` (`<stem>_vocals.wav` et `<stem>_instrumental.wav`).
+- Outil recommandé : **Demucs** (two-stems vocals) pour limiter les dépendances :
+
+```bash
+pip install --upgrade demucs  # installe également PyTorch/torchaudio
+python scripts/02_separate_stems.py --tool demucs --demucs-model htdemucs --demucs-device cuda
+```
+
+- Alternative UVR : si vous disposez d'une commande UVR (CLI portable ou pip) acceptant les arguments d'entrée/sortie, passez-la via `--tool uvr` et le template `--uvr-command` (placeholders `{input}`, `{output_dir}`, `{model}`), par exemple :
+
+```bash
+python scripts/02_separate_stems.py \
+  --tool uvr \
+  --uvr-command "python inference.py --input {input} --output_dir {output_dir} --model {model}" \
+  --uvr-model C:/models/uvr5/model.pth \
+  --uvr-vocals-name vocals.wav \
+  --uvr-instrumental-name instrumental.wav
+```
+
+Dans les deux cas, la commande accepte `--stem` pour cibler un épisode et `--overwrite` pour régénérer des stems déjà présents.
 
 ### CLI ou GUI ? Pourquoi conserver les deux
 

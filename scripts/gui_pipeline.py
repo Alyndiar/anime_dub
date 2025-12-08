@@ -2,7 +2,7 @@
 Interface GUI pour orchestrer les étapes du pipeline.
 
 Fonctionnalités principales :
-- Sélectionner les étapes à exécuter et l'ordre par défaut 01→09.
+- Sélectionner les étapes à exécuter et l'ordre par défaut 01→10.
 - Choisir le niveau de pause (aucune, après chaque fichier, répertoire ou étape).
 - Modifier les fichiers de configuration (chemins de données) directement depuis l'interface.
 - Enregistrer / charger l'état complet : thème, chemins, options, étape + fichier en cours.
@@ -58,14 +58,15 @@ class WorkflowStep:
 
 STEPS: list[WorkflowStep] = [
     WorkflowStep("01", "Extraction audio", "01_extract_audio.py", "episodes_raw_dir", "*.mkv", "ffmpeg → wav", supports_verbose=True),
-    WorkflowStep("02", "Diarisation", "02_diarize.py", "audio_raw_dir", "*_mono16k.wav", "pyannote 3.1"),
-    WorkflowStep("03", "Transcription Whisper", "03_whisper_transcribe.py", "audio_raw_dir", "*_mono16k.wav", "Whisper large-v3"),
-    WorkflowStep("04", "Traduction NLLB", "04_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB 600M"),
-    WorkflowStep("05", "Banque de voix", "05_build_speaker_bank.py", None, None, "Initialisation/embeddings"),
-    WorkflowStep("06", "Attribution personnages", "06_assign_characters.py", "whisper_json_fr_dir", "*_fr.json", "Matching embeddings"),
-    WorkflowStep("07", "Synthèse XTTS", "07_synthesize_xtts.py", "segments_dir", "*_segments.json", "XTTS-v2"),
-    WorkflowStep("08", "Mix audio", "08_mix_audio.py", "dub_audio_dir", "*_fr_voices.wav", "amix ffmpeg"),
-    WorkflowStep("09", "Remux vidéo", "09_remux.py", "dub_audio_dir", "*_fr_full.wav", "Remux MKV"),
+    WorkflowStep("02", "Séparation stems", "02_separate_stems.py", "audio_raw_dir", "*_full.wav", "Demucs/UVR", supports_verbose=True),
+    WorkflowStep("03", "Diarisation", "03_diarize.py", "audio_raw_dir", "*_mono16k.wav", "pyannote 3.1"),
+    WorkflowStep("04", "Transcription Whisper", "04_whisper_transcribe.py", "audio_raw_dir", "*_mono16k.wav", "Whisper large-v3"),
+    WorkflowStep("05", "Traduction NLLB", "05_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB 600M"),
+    WorkflowStep("06", "Banque de voix", "06_build_speaker_bank.py", None, None, "Initialisation/embeddings"),
+    WorkflowStep("07", "Attribution personnages", "07_assign_characters.py", "whisper_json_fr_dir", "*_fr.json", "Matching embeddings"),
+    WorkflowStep("08", "Synthèse XTTS", "08_synthesize_xtts.py", "segments_dir", "*_segments.json", "XTTS-v2"),
+    WorkflowStep("09", "Mix audio", "09_mix_audio.py", "dub_audio_dir", "*_fr_voices.wav", "amix ffmpeg"),
+    WorkflowStep("10", "Remux vidéo", "10_remux.py", "dub_audio_dir", "*_fr_full.wav", "Remux MKV"),
 ]
 
 

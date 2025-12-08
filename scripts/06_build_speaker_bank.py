@@ -1,4 +1,4 @@
-# scripts/05_build_speaker_bank.py
+# scripts/06_build_speaker_bank.py
 import argparse
 import logging
 import os

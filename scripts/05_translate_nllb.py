@@ -1,4 +1,4 @@
-# scripts/04_translate_nllb.py
+# scripts/05_translate_nllb.py
 import argparse
 import json
 import logging

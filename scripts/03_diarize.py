@@ -1,4 +1,4 @@
-# scripts/02_diarize.py
+# scripts/03_diarize.py
 import argparse
 import logging
 import os
