@@ -3,7 +3,7 @@ Interface GUI pour orchestrer les étapes du pipeline.
 
 Fonctionnalités principales :
 - Sélectionner les étapes à exécuter et l'ordre par défaut 01→09.
-- Choisir le niveau de pause (après chaque fichier, répertoire ou étape).
+- Choisir le niveau de pause (aucune, après chaque fichier, répertoire ou étape).
 - Modifier les fichiers de configuration (chemins de données) directement depuis l'interface.
 - Enregistrer / charger l'état complet : thème, chemins, options, étape + fichier en cours.
 - Relancer automatiquement les scripts concernés avec filtrage ``--stem`` pour reprendre sur un fichier précis.
@@ -159,7 +159,7 @@ class PathManager:
 class WorkflowState:
     def __init__(self):
         self.theme = "dark"
-        self.pause_mode = "step"  # values: file, directory, step
+        self.pause_mode = "step"  # values: none, file, directory, step
         self.selected_steps = [s.step_id for s in STEPS]
         self.current_step = None
         self.current_index = 0
@@ -236,6 +236,88 @@ class WorkflowRunner:
         self.thread.start()
 
     def _run(self):
+        if not self.state.selected_steps:
+            self.log("Aucune étape sélectionnée.")
+            return
+
+        if self.state.pause_mode == "file":
+            self._run_by_file()
+        else:
+            self._run_by_step()
+
+    def _run_by_file(self):
+        selected_steps = [s for s in STEPS if s.step_id in self.state.selected_steps]
+        if not selected_steps:
+            self.log("Aucune étape sélectionnée.")
+            return
+
+        units = self._gather_units(selected_steps)
+        if not units:
+            self.log("Aucun fichier sélectionné pour les étapes demandées.")
+            return
+
+        start_index = self.state.current_index if self.state.pause_mode == "file" else 0
+
+        for unit_idx, unit in enumerate(units):
+            if unit_idx < start_index:
+                continue
+            for step in selected_steps:
+                if self.stop_event.is_set():
+                    self.log("Arrêt demandé, sauvegarde de l'état…")
+                    self.state.current_step = step.step_id
+                    self.state.current_index = unit_idx
+                    self.state.save()
+                    return
+
+                units_for_step = self._filter_units(step.list_units(self.path_manager))
+                if not units_for_step:
+                    self.log(f"Aucun fichier disponible pour {step.label}, étape ignorée.")
+                    continue
+
+                if units_for_step == ["_all_"]:
+                    if unit_idx > 0:
+                        continue
+                    batch = ["_all_"]
+                elif unit not in units_for_step:
+                    self.log(f"{unit} n'est pas disponible pour {step.label}, étape ignorée pour ce fichier.")
+                    continue
+                else:
+                    batch = [unit]
+
+                self.state.current_step = step.step_id
+                self.state.current_index = unit_idx
+                self.state.save()
+
+                label_units = ", ".join(batch)
+                self.log(f"→ {step.label} : {label_units}")
+                self._run_script(step, batch)
+
+                if self.pause_event.is_set():
+                    self.log("Mise en pause demandée.")
+                    self.state.save()
+                    return
+
+            if self.state.pause_mode == "file" and unit != "_all_":
+                self.log("Pause après fichier (option active).")
+                self.state.current_step = None
+                self.state.current_index = unit_idx + 1
+                self.state.save()
+                self.pause_event.set()
+                return
+
+        self.log("Pipeline terminé.")
+        self.state.current_step = None
+        self.state.current_index = 0
+        self.state.save()
+
+    def _next_step_id(self, current: str) -> str | None:
+        ordered = [s.step_id for s in STEPS if s.step_id in self.state.selected_steps]
+        if current not in ordered:
+            return None
+        idx = ordered.index(current)
+        return ordered[idx + 1] if idx + 1 < len(ordered) else None
+
+    def _run_by_step(self):
         start_step = self.state.current_step or (self.state.selected_steps[0] if self.state.selected_steps else None)
         start_found = False if start_step else True
 
@@ -252,9 +334,8 @@ class WorkflowRunner:
             if not units:
                 self.log(f"Aucun fichier sélectionné pour {step.label}, étape ignorée.")
                 continue
-            batches = [[u] for u in units] if self.state.pause_mode == "file" else [units]
             start_index = self.state.current_index if self.state.current_step == step.step_id else 0
-            for batch_idx, batch in enumerate(batches):
+            for batch_idx, batch in enumerate([units]):
                 if batch_idx < start_index:
                     continue
                 if self.stop_event.is_set():
@@ -277,28 +358,38 @@ class WorkflowRunner:
                     self.state.save()
                     return
 
-                if self.state.pause_mode == "file" and batch != ["_all_"]:
-                    self.log("Pause après fichier (option active).")
-                    self.pause_event.set()
-                    self.state.save()
-                    return
-
-            if self.state.pause_mode == "directory":
-                self.log("Pause après répertoire (option active).")
-                self.pause_event.set()
-                self.state.save()
-                return
-
             if self.state.pause_mode == "step":
+                next_step = self._next_step_id(step.step_id)
+                if next_step is None:
+                    continue
                 self.log("Pause après étape (option active).")
-                self.pause_event.set()
+                self.state.current_step = next_step
+                self.state.current_index = 0
                 self.state.save()
+                self.pause_event.set()
                 return
+
+        if self.state.pause_mode == "directory":
+            self.log("Pipeline terminé pour ce répertoire.")
+            self.log("Pause après répertoire (option active).")
+            self.state.current_step = None
+            self.state.current_index = 0
+            self.state.save()
+            self.pause_event.set()
+            return
 
         self.log("Pipeline terminé.")
         self.state.current_step = None
         self.state.current_index = 0
         self.state.save()
+
+    def _gather_units(self, selected_steps: list[WorkflowStep]) -> list[str]:
+        for step in selected_steps:
+            units = self._filter_units(step.list_units(self.path_manager))
+            candidates = [u for u in units if u != "_all_"]
+            if candidates:
+                return candidates
+        return []
 
     def _run_script(self, step: WorkflowStep, units: list[str]):
         script_path = PROJECT_ROOT / "scripts" / step.script
@@ -318,7 +409,7 @@ class WorkflowRunner:
             if completed.stderr:
                 self.log(completed.stderr.strip())
         except subprocess.CalledProcessError as exc:
-            self.log(f"Erreur lors de {step.label} ({unit}) : {exc}")
+            self.log(f"Erreur lors de {step.label} : {exc}")
             self.pause_event.set()
             self.state.save()
 
@@ -401,6 +492,7 @@ class PipelineGUI:
         self.options_menu.add_command(label="Configurer les chemins…", command=self.open_paths_window)
         self.options_menu.add_separator()
         pause_menu = tk.Menu(self.options_menu, tearoff=0)
+        pause_menu.add_command(label="Aucune pause", command=lambda: self._set_pause("none"))
         pause_menu.add_command(label="Pause par fichier", command=lambda: self._set_pause("file"))
         pause_menu.add_command(label="Pause par répertoire", command=lambda: self._set_pause("directory"))
         pause_menu.add_command(label="Pause par étape", command=lambda: self._set_pause("step"))
@@ -480,7 +572,7 @@ class PipelineGUI:
 
         ttk.Label(controls, text="Mode de pause :").pack(side=tk.LEFT, padx=(20, 4))
         self.pause_var = tk.StringVar(value=self.state.pause_mode)
-        pause_combo = ttk.Combobox(controls, textvariable=self.pause_var, values=["file", "directory", "step"], width=12)
+        pause_combo = ttk.Combobox(controls, textvariable=self.pause_var, values=["none", "file", "directory", "step"], width=12)
         pause_combo.pack(side=tk.LEFT)
 
         # Log
