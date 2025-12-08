@@ -10,7 +10,8 @@ import argparse
 import logging
 import os
 import subprocess
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, Optional
 
 from utils_config import ensure_directories, get_data_path
 
@@ -58,18 +59,45 @@ def run(cmd: list[str], logger: logging.Logger, verbose: bool) -> None:
     subprocess.run(cmd, check=True)
 
 
-def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
+VIDEO_EXTENSIONS = (".mkv", ".mp4", ".mov", ".m4v", ".avi")
+
+
+def find_source_file(stem: str, base_dir: Path, logger: logging.Logger) -> Optional[Path]:
+    """Retourne le chemin du fichier vidéo correspondant au stem, si trouvé."""
+
+    for ext in VIDEO_EXTENSIONS:
+        candidate = base_dir / f"{stem}{ext}"
+        if candidate.exists():
+            log(f"Source détectée : {candidate}", logger)
+            return candidate
+    log(
+        f"Aucun fichier trouvé pour {stem} (extensions attendues : {', '.join(VIDEO_EXTENSIONS)})",
+        logger,
+        level=logging.WARNING,
+    )
+    return None
+
+
+def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[tuple[str, Path]]:
     """Itère sur les vidéos sources, en filtrant si nécessaire."""
 
     episodes_raw = get_data_path("episodes_raw_dir")
     log(f"Recherche des sources dans {episodes_raw}", logger)
-    for video in sorted(episodes_raw.glob("*.mkv")):
-        stem = video.stem
+
+    stems_to_check: Iterable[str]
+    if stems_filter:
+        stems_to_check = sorted(stems_filter)
+    else:
+        stems_to_check = sorted({p.stem for p in episodes_raw.glob("*") if p.suffix in VIDEO_EXTENSIONS})
+
+    for stem in stems_to_check:
         if stems_filter and stem not in stems_filter:
             log(f"Ignore {stem} car non sélectionné", logger)
             continue
-        log(f"Source détectée : {video}", logger)
-        yield stem
+        video_path = find_source_file(stem, episodes_raw, logger)
+        if not video_path:
+            continue
+        yield stem, video_path
 
 
 def extract_audio_for_all_sources(
@@ -84,11 +112,11 @@ def extract_audio_for_all_sources(
     paths = ensure_directories(["audio_raw_dir"])
     audio_raw = paths["audio_raw_dir"]
 
-    episodes_raw = get_data_path("episodes_raw_dir")
     log(f"Sorties audio dans {audio_raw}", logger)
 
-    for stem in iter_sources(stems, logger):
-        video = episodes_raw / f"{stem}.mkv"
+    processed_any = False
+
+    for stem, video in iter_sources(stems, logger):
         full_wav = audio_raw / f"{stem}_full.wav"
         mono16 = audio_raw / f"{stem}_mono16k.wav"
 
@@ -131,6 +159,15 @@ def extract_audio_for_all_sources(
             ],
             logger,
             verbose,
+        )
+
+        processed_any = True
+
+    if not processed_any:
+        log(
+            "Aucun fichier vidéo trouvé avec les extensions attendues ; extraction non effectuée.",
+            logger,
+            level=logging.WARNING,
         )
 
 
