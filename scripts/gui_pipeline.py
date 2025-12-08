@@ -214,9 +214,13 @@ class WorkflowRunner:
         if not units:
             return []
         if self.state.selection_mode == "single" and self.state.single_stem:
-            return [u for u in units if u == self.state.single_stem]
+            filtered = [u for u in units if u == self.state.single_stem]
+            # Si le stem ciblé n'est pas présent dans la liste détectée (ex. épisode hors répertoire),
+            # on force quand même l'exécution sur ce stem explicitement demandé.
+            return filtered or [self.state.single_stem]
         if self.state.selection_mode == "selection" and self.state.selected_units:
-            return [u for u in units if u in self.state.selected_units]
+            filtered = [u for u in units if u in self.state.selected_units]
+            return filtered or list(self.state.selected_units)
         return units
 
     def start(self, selected_steps: list[str], pause_mode: str):
@@ -668,6 +672,10 @@ class PipelineGUI:
         if not filename:
             return
         stem = self._normalize_stem(filename)
+        if stem not in self.available_stems:
+            self.available_stems.append(stem)
+            self.available_stems = sorted(set(self.available_stems))
+            self.single_combo.configure(values=self.available_stems)
         self.single_stem_var.set(stem)
         self.selection_mode_var.set("single")
         self.selection_label.configure(text=self._selection_summary())
