@@ -113,3 +113,16 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 - option « Verbose » dans le menu Options ou la barre de commandes pour tracer en détail les appels des scripts (commande, environnement `ANIME_DUB_VERBOSE`, paramètre `--verbose` lorsque disponible) ;
 - les logs sont affichés dans la fenêtre et simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
 - reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).
+
+### CLI ou GUI ? Pourquoi conserver les deux
+
+- Les scripts `scripts/0X_*.py` restent **exécutables en ligne de commande** (contrainte historique du projet) : chaque script gère ses propres arguments (`--stem`, `--verbose`, etc.) et fonctionne sans le GUI. Cela reste indispensable pour les usages batch, le débogage ciblé et l’exécution sur des machines sans environnement graphique.
+- Le GUI **orchestration** sert de surcouche ergonomique : il prépare l’environnement (variables `ANIME_DUB_PROJECT_ROOT` / `ANIME_DUB_CONFIG_DIR`), sélectionne les stems ciblés et enchaîne les scripts en respectant les pauses, le mode verbose et la reprise. Il ne remplace pas la logique métier des scripts mais la pilote.
+- Choix de design :
+  - **Facteurs communs** dans `scripts/utils_config.py` ou des fonctions internes : cela évite le double code et permet au GUI d’importer et d’appeler proprement sans casser l’interface CLI.
+  - **Journalisation unifiée** : chaque script utilise `logging` (et accepte `--verbose` / `ANIME_DUB_VERBOSE`) pour que le GUI ou la CLI capturent la même trace.
+  - **Isolation par projet** : les chemins par projet sont résolus via les variables d’environnement exportées par le GUI, mais un opérateur CLI peut toujours définir ces variables ou utiliser les arguments `--stem` pour cibler un épisode précis.
+- En pratique :
+  - continuer à exposer un `if __name__ == "__main__":` pour conserver l’entrée CLI ;
+  - structurer les scripts avec des fonctions réutilisables (ex. `run_extract_audio(stems, config, logger)`) afin que le GUI puisse les importer directement si besoin, sans empêcher l’appel direct en CLI ;
+  - limiter les effets de bord (globales) pour que le passage de contexte GUI/CLI reste prévisible.
