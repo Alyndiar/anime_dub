@@ -163,7 +163,7 @@ class WorkflowState:
         self.current_step = None
         self.current_index = 0
         self.path_state = {"base_dir": str(PROJECT_ROOT), "overrides": {}, "config_dir": str(PROJECT_ROOT / "config")}
-        self.project = {"name": None, "base_dir": str(PROJECT_ROOT)}
+        self.project = {"name": None, "anime_title": None, "base_dir": str(PROJECT_ROOT)}
 
     def load(self, path: Path = STATE_PATH) -> None:
         if not path.exists():
@@ -298,11 +298,11 @@ class WorkflowRunner:
 class PipelineGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Anime Dub – Orchestrateur GUI")
         self.state = WorkflowState()
         self.state.load()
 
         self.project_name = None
+        self.anime_title = None
         self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
         self.project_config_dir = self.project_base / "config"
         self._maybe_load_project_state()
@@ -323,6 +323,7 @@ class PipelineGUI:
 
         self._build_menu()
         self._build_layout()
+        self._update_title()
         self.apply_theme(self.state.theme)
 
     def _maybe_load_project_state(self):
@@ -331,6 +332,7 @@ class PipelineGUI:
         if metadata_path.exists():
             self.state.load(metadata_path)
         self.project_name = self.state.project.get("name") if self.state.project else None
+        self.anime_title = self.state.project.get("anime_title") if self.state.project else None
         self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
         self.project_config_dir = self.project_base / "config"
 
@@ -497,12 +499,14 @@ class PipelineGUI:
         self.apply_theme(self.state.theme)
         self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
         self.project_name = self.state.project.get("name")
+        self.anime_title = self.state.project.get("anime_title")
         self.project_config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
         self.path_manager = PathManager(base_dir=self.project_base, overrides=self.state.path_state.get("overrides", {}), config_dir=self.project_config_dir)
         self._refresh_path_vars()
         for step in STEPS:
             self.step_vars[step.step_id].set(step.step_id in self.state.selected_steps)
         self.log("État chargé.")
+        self._update_title()
 
     def _current_state_path(self) -> Path:
         project_path = Path(self.state.project.get("base_dir", "")) if self.state.project else None
@@ -521,32 +525,41 @@ class PipelineGUI:
 
     # --- Gestion de projet ---
     def create_project(self):
-        name = simpledialog.askstring("Nouveau projet", "Nom de l'animé ou du projet :", parent=self.root)
-        if not name:
+        anime = simpledialog.askstring("Nouvel animé", "Titre de l'animé :", parent=self.root)
+        if not anime:
             return
-        base_dir = filedialog.askdirectory(title="Choisir le répertoire de base du projet")
-        if not base_dir:
+        default_project = anime.strip() or "projet_anime"
+        project = simpledialog.askstring(
+            "Nom du projet",
+            "Nom du projet (sera utilisé pour le dossier et le fichier YAML) :",
+            initialvalue=default_project,
+            parent=self.root,
+        )
+        if not project:
             return
-        base_path = Path(base_dir)
-        if base_path.resolve() == PROJECT_ROOT.resolve():
-            messagebox.showerror("Projet", "Le répertoire du projet doit être distinct du dépôt.")
+        base_path = self._prompt_new_base_dir(project)
+        if not base_path:
             return
-        config_dir = base_path / "config"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        template_paths = PROJECT_ROOT / "config/paths.yaml"
-        if template_paths.exists() and not (config_dir / "paths.yaml").exists():
-            (config_dir / "paths.yaml").write_text(template_paths.read_text(encoding="utf-8"), encoding="utf-8")
 
-        self.state.project = {"name": name, "base_dir": str(base_path)}
-        self.project_name = name
+        try:
+            self._initialize_project_files(base_path, anime.strip(), project.strip())
+        except FileExistsError:
+            messagebox.showerror("Projet", "Le répertoire du projet existe déjà, choisis un chemin inexistant.")
+            return
+
+        self.state.project = {"name": project.strip(), "anime_title": anime.strip(), "base_dir": str(base_path)}
+        self.project_name = project.strip()
+        self.anime_title = anime.strip()
         self.project_base = base_path
-        self.project_config_dir = config_dir
-        self.path_manager = PathManager(base_dir=base_path, overrides={}, config_dir=config_dir)
+        self.project_config_dir = base_path / "config"
+        self.path_manager = PathManager(base_dir=base_path, overrides={}, config_dir=self.project_config_dir)
         self.state.path_state = self.path_manager.to_state()
         self.base_var.set(str(base_path))
         self._refresh_path_vars(reset=True)
+        self._update_title()
         self._save_state()
-        self.log(f"Projet créé : {name} ({base_path})")
+        self.log(f"Projet créé : {self.project_name} ({base_path})")
+        self.open_paths_window()
 
     def load_project(self):
         base_dir = filedialog.askdirectory(title="Charger un projet (sélectionner le répertoire de base)")
@@ -554,13 +567,10 @@ class PipelineGUI:
             return
         base_path = Path(base_dir)
         meta_state = base_path / "config/gui_state.json"
-        project_meta = base_path / "config/project.json"
-        if project_meta.exists():
-            meta = json.loads(project_meta.read_text(encoding="utf-8"))
-            self.state.project = {"name": meta.get("name"), "base_dir": str(base_path)}
-        else:
-            self.state.project = {"name": base_path.name, "base_dir": str(base_path)}
-        self.project_name = self.state.project.get("name")
+        project_name, anime_title = self._load_project_metadata(base_path)
+        self.state.project = {"name": project_name, "anime_title": anime_title, "base_dir": str(base_path)}
+        self.project_name = project_name
+        self.anime_title = anime_title
         self.project_base = base_path
         self.project_config_dir = base_path / "config"
         if meta_state.exists():
@@ -570,6 +580,7 @@ class PipelineGUI:
         self.path_manager = PathManager(base_dir=base_path, overrides=overrides, config_dir=config_dir)
         self.base_var.set(str(base_path))
         self._refresh_path_vars(reset=True)
+        self._update_title()
         self._save_state()
         self.log(f"Projet chargé : {self.project_name} ({base_path})")
 
@@ -577,13 +588,16 @@ class PipelineGUI:
         if not self.project_base or self.project_base == PROJECT_ROOT:
             messagebox.showwarning("Projet", "Aucun projet dédié n'est ouvert.")
             return
-        self.state.project = {"name": self.project_name, "base_dir": str(self.project_base)}
+        self.state.project = {"name": self.project_name, "anime_title": self.anime_title, "base_dir": str(self.project_base)}
         self.state.path_state = self.path_manager.to_state()
         self._save_state()
-        meta = {"name": self.project_name, "base_dir": str(self.project_base)}
-        meta_path = self.project_base / "config/project.json"
-        meta_path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_project_metadata(self.project_base, self.project_name, self.anime_title)
+        meta_json = self.project_base / "config/project.json"
+        meta_json.parent.mkdir(parents=True, exist_ok=True)
+        meta_json.write_text(
+            json.dumps({"name": self.project_name, "anime_title": self.anime_title, "base_dir": str(self.project_base)}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         messagebox.showinfo("Projet", f"Projet sauvegardé : {self.project_name}")
 
     def close_project(self):
@@ -591,15 +605,95 @@ class PipelineGUI:
             return
         self.save_project()
         self.project_name = None
+        self.anime_title = None
         self.project_base = PROJECT_ROOT
         self.project_config_dir = PROJECT_ROOT / "config"
-        self.state.project = {"name": None, "base_dir": str(PROJECT_ROOT)}
+        self.state.project = {"name": None, "anime_title": None, "base_dir": str(PROJECT_ROOT)}
         self.path_manager = PathManager(base_dir=PROJECT_ROOT, overrides={}, config_dir=self.project_config_dir)
         self.state.path_state = self.path_manager.to_state()
         self.base_var.set(str(PROJECT_ROOT))
         self._refresh_path_vars(reset=True)
         self._save_state()
         self.log("Projet fermé, retour au profil par défaut.")
+        self._update_title()
+
+    def _update_title(self):
+        anime = self.anime_title or "Animé non renseigné"
+        project = self.project_name or "Profil par défaut"
+        self.root.title(f"Anime Dub – {anime} [{project}]")
+
+    def _prompt_new_base_dir(self, project_name: str) -> Path | None:
+        default_base = (PROJECT_ROOT / project_name).resolve()
+        current_value = str(default_base)
+        while True:
+            response = simpledialog.askstring(
+                "Répertoire du projet",
+                "Choisir un répertoire de base inexistant (sera créé avec la hiérarchie standard) :",
+                initialvalue=current_value,
+                parent=self.root,
+            )
+            if response is None:
+                return None
+            candidate = Path(response).expanduser()
+            if not candidate.is_absolute():
+                candidate = (PROJECT_ROOT / candidate).resolve()
+            if candidate.exists():
+                messagebox.showerror("Projet", "Le répertoire existe déjà. Choisis un chemin inexistant.")
+                current_value = str(candidate)
+                continue
+            if candidate.resolve() == PROJECT_ROOT.resolve():
+                messagebox.showerror("Projet", "Le répertoire du projet doit être distinct du dépôt.")
+                current_value = str(candidate)
+                continue
+            return candidate
+
+    def _initialize_project_files(self, base_path: Path, anime_title: str, project_name: str) -> None:
+        base_path.mkdir(parents=True, exist_ok=False)
+        config_dir = base_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        for cfg_name in ("paths.yaml", "characters.yaml", "xtts_config.yaml"):
+            template = PROJECT_ROOT / "config" / cfg_name
+            dest = config_dir / cfg_name
+            if template.exists() and not dest.exists():
+                dest.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+        path_manager = PathManager(base_dir=base_path, overrides={}, config_dir=config_dir)
+        for key in path_manager.paths_yaml:
+            try:
+                resolved = path_manager.get_path(key)
+            except Exception:
+                continue
+            resolved.mkdir(parents=True, exist_ok=True)
+        self._write_project_metadata(base_path, project_name, anime_title)
+        meta_json = config_dir / "project.json"
+        meta_json.write_text(
+            json.dumps({"name": project_name, "anime_title": anime_title, "base_dir": str(base_path)}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _write_project_metadata(self, base_path: Path, project_name: str | None, anime_title: str | None) -> None:
+        if not project_name:
+            return
+        meta = {"project_name": project_name, "anime_title": anime_title, "base_dir": str(base_path)}
+        yaml_path = base_path / f"{project_name}.yaml"
+        yaml_path.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    def _load_project_metadata(self, base_path: Path) -> Tuple[str | None, str | None]:
+        primary_yaml = base_path / f"{base_path.name}.yaml"
+        if primary_yaml.exists():
+            data = yaml.safe_load(primary_yaml.read_text(encoding="utf-8")) or {}
+            return data.get("project_name", base_path.name), data.get("anime_title")
+        for candidate in base_path.glob("*.yaml"):
+            try:
+                data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if {"project_name", "anime_title"}.intersection(data.keys()):
+                return data.get("project_name", base_path.name), data.get("anime_title")
+        meta_json = base_path / "config/project.json"
+        if meta_json.exists():
+            data = json.loads(meta_json.read_text(encoding="utf-8"))
+            return data.get("name", base_path.name), data.get("anime_title")
+        return base_path.name, None
 
     def apply_theme(self, theme: str):
         style = ttk.Style()

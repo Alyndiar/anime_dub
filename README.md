@@ -105,6 +105,7 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 
 - menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
 - gestion de projets (Créer/Charger/Sauvegarder/Fermer) avec un répertoire de base par projet, ses fichiers de config dédiés dans `<projet>/config/` et un état persistant par projet ;
+- création guidée : saisie du titre d'animé et du nom de projet, proposition d'un dossier dédié (inexistant) pré-rempli avec le fichier `<nom_du_projet>.yaml`, les configs par défaut et la hiérarchie `data/` ;
 - modification hiérarchique des chemins via le menu « Options → Configurer les chemins… » : chaque entrée dispose d'un bouton « … » qui ouvre un sélecteur ancré sur le répertoire parent résolu ;
 - sauvegarde et rechargement de l'état (chemins, thème sombre/clair, étape et fichier en cours) dans `config/gui_state.json` ou via « Fichier → Enregistrer sous… » ;
 - reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).
