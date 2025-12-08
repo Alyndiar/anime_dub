@@ -18,9 +18,9 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Tuple
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import yaml
 
@@ -69,22 +69,75 @@ STEPS: list[WorkflowStep] = [
 class PathManager:
     """Gère les chemins (base + overrides) et la sauvegarde YAML."""
 
-    def __init__(self, base_dir: Path, overrides: Dict[str, str] | None = None):
+    def __init__(self, base_dir: Path, overrides: Dict[str, str] | None = None, config_dir: Path | None = None):
         self.base_dir = base_dir
+        self.config_dir = config_dir or (PROJECT_ROOT / "config")
         self.overrides = overrides or {}
-        self.paths_yaml = load_paths_config()
+        self.paths_yaml = self._load_paths_yaml()
+        self.parent_map, self.children_map, self.depth_map = self._build_hierarchy()
+
+    def _load_paths_yaml(self) -> Dict[str, str]:
+        """Charge le paths.yaml du projet courant ou celui du template racine."""
+        candidate = self.config_dir / "paths.yaml"
+        if candidate.exists():
+            return yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+        return load_paths_config()
+
+    def _build_hierarchy(self) -> Tuple[Dict[str, str], Dict[str, list[str]], Dict[str, int]]:
+        parent_map: Dict[str, str] = {}
+        children_map: Dict[str, list[str]] = {}
+        depth_map: Dict[str, int] = {}
+        items = {k: Path(v) for k, v in self.paths_yaml.items()}
+
+        for key, path in items.items():
+            best_parent = None
+            best_depth = -1
+            for candidate, candidate_path in items.items():
+                if candidate == key:
+                    continue
+                try:
+                    path.relative_to(candidate_path)
+                except ValueError:
+                    continue
+                if len(candidate_path.parts) > best_depth:
+                    best_parent = candidate
+                    best_depth = len(candidate_path.parts)
+            if best_parent:
+                parent_map[key] = best_parent
+                children_map.setdefault(best_parent, []).append(key)
+                depth_map[key] = best_depth + 1
+            else:
+                depth_map[key] = len(Path(self.paths_yaml[key]).parts)
+        return parent_map, children_map, depth_map
 
     def as_display_value(self, key: str) -> str:
         if key in self.overrides:
             return self.overrides[key]
         return self.paths_yaml.get(key, "")
 
-    def get_path(self, key: str) -> Path:
+    def _resolve_path(self, key: str, cache: Dict[str, Path]) -> Path:
+        if key in cache:
+            return cache[key]
+        parent_key = self.parent_map.get(key)
+        parent_path = self.base_dir if not parent_key else self._resolve_path(parent_key, cache)
         raw_value = self.as_display_value(key)
-        path = Path(raw_value)
-        if not path.is_absolute():
-            path = self.base_dir / path
-        return path
+        raw_path = Path(raw_value)
+        if raw_path.is_absolute():
+            cache[key] = raw_path
+            return raw_path
+        parent_parts = Path(self.as_display_value(parent_key)).parts if parent_key else ()
+        raw_parts = raw_path.parts
+        if parent_parts and len(raw_parts) >= len(parent_parts) and list(raw_parts[: len(parent_parts)]) == list(parent_parts):
+            suffix = Path(*raw_parts[len(parent_parts) :])
+            resolved = parent_path / suffix
+        else:
+            resolved = parent_path / raw_path
+        cache[key] = resolved
+        return resolved
+
+    def get_path(self, key: str) -> Path:
+        cache: Dict[str, Path] = {}
+        return self._resolve_path(key, cache)
 
     def update_value(self, key: str, value: str) -> None:
         self.overrides[key] = value
@@ -92,17 +145,14 @@ class PathManager:
     def save_to_yaml(self) -> None:
         updated = dict(self.paths_yaml)
         updated.update(self.overrides)
-        for k, v in updated.items():
-            if Path(v).is_absolute():
-                # Stocke les chemins absolus tels quels ; les autres resteront relatifs à base_dir
-                updated[k] = str(v)
-        (PROJECT_ROOT / "config/paths.yaml").write_text(
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        (self.config_dir / "paths.yaml").write_text(
             yaml.safe_dump(updated, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
 
     def to_state(self) -> dict:
-        return {"base_dir": str(self.base_dir), "overrides": self.overrides}
+        return {"base_dir": str(self.base_dir), "overrides": self.overrides, "config_dir": str(self.config_dir)}
 
 
 class WorkflowState:
@@ -112,7 +162,8 @@ class WorkflowState:
         self.selected_steps = [s.step_id for s in STEPS]
         self.current_step = None
         self.current_index = 0
-        self.path_state = {"base_dir": str(PROJECT_ROOT), "overrides": {}}
+        self.path_state = {"base_dir": str(PROJECT_ROOT), "overrides": {}, "config_dir": str(PROJECT_ROOT / "config")}
+        self.project = {"name": None, "base_dir": str(PROJECT_ROOT)}
 
     def load(self, path: Path = STATE_PATH) -> None:
         if not path.exists():
@@ -124,6 +175,7 @@ class WorkflowState:
         self.current_step = data.get("current_step")
         self.current_index = int(data.get("current_index", 0))
         self.path_state = data.get("paths", self.path_state)
+        self.project = data.get("project", self.project)
 
     def save(self, path: Path = STATE_PATH) -> None:
         payload = {
@@ -133,6 +185,7 @@ class WorkflowState:
             "current_step": self.current_step,
             "current_index": self.current_index,
             "paths": self.path_state,
+            "project": self.project,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -249,22 +302,47 @@ class PipelineGUI:
         self.state = WorkflowState()
         self.state.load()
 
-        base_dir = Path(self.state.path_state.get("base_dir", PROJECT_ROOT))
+        self.project_name = None
+        self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
+        self.project_config_dir = self.project_base / "config"
+        self._maybe_load_project_state()
+
+        base_dir = Path(self.state.path_state.get("base_dir", self.project_base))
         overrides = self.state.path_state.get("overrides", {})
-        self.path_manager = PathManager(base_dir=base_dir, overrides=overrides)
+        config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
+        self.path_manager = PathManager(base_dir=base_dir, overrides=overrides, config_dir=config_dir)
 
         self.runner = WorkflowRunner(self.log, self.state, self.path_manager)
         self.step_vars: Dict[str, tk.BooleanVar] = {}
         self.path_vars: Dict[str, tk.StringVar] = {}
+        self.path_last_values: Dict[str, str] = {}
+        self.resolved_labels: Dict[str, ttk.Label] = {}
         self.base_var = tk.StringVar(value=str(self.path_manager.base_dir))
+        self.base_trace_added = False
         self.dialogs: set[tk.Toplevel] = set()
 
         self._build_menu()
         self._build_layout()
         self.apply_theme(self.state.theme)
 
+    def _maybe_load_project_state(self):
+        project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT)) if self.state.project else PROJECT_ROOT
+        metadata_path = project_base / "config/gui_state.json"
+        if metadata_path.exists():
+            self.state.load(metadata_path)
+        self.project_name = self.state.project.get("name") if self.state.project else None
+        self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
+        self.project_config_dir = self.project_base / "config"
+
     def _build_menu(self):
         self.menubar = tk.Menu(self.root)
+
+        self.project_menu = tk.Menu(self.menubar, tearoff=0)
+        self.project_menu.add_command(label="Créer un projet", command=self.create_project)
+        self.project_menu.add_command(label="Charger un projet", command=self.load_project)
+        self.project_menu.add_command(label="Sauvegarder le projet", command=self.save_project)
+        self.project_menu.add_command(label="Fermer le projet", command=self.close_project)
+        self.menubar.add_cascade(label="Projet", menu=self.project_menu)
 
         self.file_menu = tk.Menu(self.menubar, tearoff=0)
         self.file_menu.add_command(label="Enregistrer l'état", command=self.save_state)
@@ -344,25 +422,48 @@ class PipelineGUI:
         container = ttk.Frame(self.paths_window, padding=10, style="Bg.TFrame")
         container.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(container, text="Répertoire de base").grid(row=0, column=0, sticky="w")
-        ttk.Entry(container, textvariable=self.base_var, width=80).grid(row=0, column=1, sticky="ew")
-        ttk.Button(container, text="Parcourir", command=self._choose_base_dir).grid(row=0, column=2, padx=4)
-        container.columnconfigure(1, weight=1)
+        header = ttk.Frame(container, style="Bg.TFrame")
+        header.grid(row=0, column=0, columnspan=4, sticky="ew")
+        ttk.Label(header, text="Répertoire de base du projet").pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Entry(header, textvariable=self.base_var, width=60).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        if not self.base_trace_added:
+            self.base_var.trace_add("write", lambda *_: self._on_base_change())
+            self.base_trace_added = True
+        ttk.Button(header, text="...", width=4, command=self._choose_base_dir, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
+
+        headers = ["Clé", "Chemin relatif/absolu", "Résolu", ""]
+        for idx, title in enumerate(headers):
+            ttk.Label(container, text=title).grid(row=1, column=idx, sticky="w", padx=2)
 
         self._ensure_path_vars()
-        row = 1
-        for key, var in self.path_vars.items():
-            ttk.Label(container, text=key).grid(row=row, column=0, sticky="w")
-            ttk.Entry(container, textvariable=var, width=80).grid(row=row, column=1, sticky="ew")
+        row = 2
+        ordered_keys = sorted(self.path_manager.paths_yaml.keys(), key=lambda k: self.path_manager.depth_map.get(k, 0))
+        for key in ordered_keys:
+            var = self.path_vars[key]
+            indent = max(0, self.path_manager.depth_map.get(key, 0) - 1)
+            prefix = f"{'    ' * indent}{'↳ ' if indent else ''}"
+            label = ttk.Label(container, text=f"{prefix}{key}")
+            label.grid(row=row, column=0, sticky="w", padx=(indent * 12, 4))
+            entry = ttk.Entry(container, textvariable=var, width=50)
+            entry.grid(row=row, column=1, sticky="ew", padx=2)
+            entry.bind("<FocusOut>", lambda _evt, k=key: self._on_path_change(k))
+            var.trace_add("write", lambda *_args, k=key: self._on_path_change(k))
+            browse = ttk.Button(container, text="...", width=4, command=lambda k=key: self._choose_path_dir(k), style="Accent.TButton")
+            browse.grid(row=row, column=3, sticky="e", padx=2)
+            resolved = ttk.Label(container, text=str(self.path_manager.get_path(key)))
+            resolved.grid(row=row, column=2, sticky="w", padx=2)
+            self.resolved_labels[key] = resolved
             row += 1
 
-        ttk.Button(container, text="Enregistrer paths.yaml", command=self._save_paths_yaml).grid(row=row, column=0, columnspan=3, pady=6, sticky="e")
+        ttk.Button(container, text="Enregistrer paths.yaml", command=self._save_paths_yaml, style="Accent.TButton").grid(row=row, column=3, pady=6, sticky="e")
+        for col in (1, 2):
+            container.columnconfigure(col, weight=1)
         self._apply_window_background(self.paths_window)
 
     def _set_pause(self, mode: str):
         self.pause_var.set(mode)
         self.state.pause_mode = mode
-        self.state.save()
+        self._save_state()
 
     def start_workflow(self):
         selected = [step_id for step_id, var in self.step_vars.items() if var.get()]
@@ -372,33 +473,133 @@ class PipelineGUI:
         self.state.selected_steps = selected
         self.state.path_state = self.path_manager.to_state()
         self.state.pause_mode = self.pause_var.get()
-        self.state.save()
+        self._save_state()
         self.runner.start(selected, self.pause_var.get())
 
     def save_state(self):
         self.state.path_state = self.path_manager.to_state()
-        self.state.save()
-        messagebox.showinfo("État", f"Sauvegarde enregistrée dans {STATE_PATH}")
+        saved_at = self._save_state()
+        messagebox.showinfo("État", f"Sauvegarde enregistrée dans {saved_at}")
 
     def save_state_as(self):
-        dest = filedialog.asksaveasfilename(defaultextension=".json", initialdir=str(PROJECT_ROOT / "config"))
+        dest = filedialog.asksaveasfilename(defaultextension=".json", initialdir=str(self._current_state_path().parent))
         if not dest:
             return
         self.state.path_state = self.path_manager.to_state()
         self.state.save(Path(dest))
 
     def load_state(self):
-        src = filedialog.askopenfilename(defaultextension=".json", initialdir=str(PROJECT_ROOT / "config"))
+        src = filedialog.askopenfilename(defaultextension=".json", initialdir=str(self._current_state_path().parent))
         if not src:
             return
         self.state.load(Path(src))
         self.pause_var.set(self.state.pause_mode)
         self.apply_theme(self.state.theme)
-        self.path_manager = PathManager(base_dir=Path(self.state.path_state.get("base_dir", PROJECT_ROOT)), overrides=self.state.path_state.get("overrides", {}))
+        self.project_base = Path(self.state.project.get("base_dir", PROJECT_ROOT))
+        self.project_name = self.state.project.get("name")
+        self.project_config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
+        self.path_manager = PathManager(base_dir=self.project_base, overrides=self.state.path_state.get("overrides", {}), config_dir=self.project_config_dir)
         self._refresh_path_vars()
         for step in STEPS:
             self.step_vars[step.step_id].set(step.step_id in self.state.selected_steps)
         self.log("État chargé.")
+
+    def _current_state_path(self) -> Path:
+        project_path = Path(self.state.project.get("base_dir", "")) if self.state.project else None
+        if project_path and project_path != PROJECT_ROOT:
+            return project_path / "config/gui_state.json"
+        return STATE_PATH
+
+    def _save_state(self) -> Path:
+        path = self._current_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.state.save(path)
+        # Sauvegarde miroir dans le dossier racine pour recharger le dernier projet ouvert
+        if path != STATE_PATH:
+            self.state.save(STATE_PATH)
+        return path
+
+    # --- Gestion de projet ---
+    def create_project(self):
+        name = simpledialog.askstring("Nouveau projet", "Nom de l'animé ou du projet :", parent=self.root)
+        if not name:
+            return
+        base_dir = filedialog.askdirectory(title="Choisir le répertoire de base du projet")
+        if not base_dir:
+            return
+        base_path = Path(base_dir)
+        if base_path.resolve() == PROJECT_ROOT.resolve():
+            messagebox.showerror("Projet", "Le répertoire du projet doit être distinct du dépôt.")
+            return
+        config_dir = base_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        template_paths = PROJECT_ROOT / "config/paths.yaml"
+        if template_paths.exists() and not (config_dir / "paths.yaml").exists():
+            (config_dir / "paths.yaml").write_text(template_paths.read_text(encoding="utf-8"), encoding="utf-8")
+
+        self.state.project = {"name": name, "base_dir": str(base_path)}
+        self.project_name = name
+        self.project_base = base_path
+        self.project_config_dir = config_dir
+        self.path_manager = PathManager(base_dir=base_path, overrides={}, config_dir=config_dir)
+        self.state.path_state = self.path_manager.to_state()
+        self.base_var.set(str(base_path))
+        self._refresh_path_vars(reset=True)
+        self._save_state()
+        self.log(f"Projet créé : {name} ({base_path})")
+
+    def load_project(self):
+        base_dir = filedialog.askdirectory(title="Charger un projet (sélectionner le répertoire de base)")
+        if not base_dir:
+            return
+        base_path = Path(base_dir)
+        meta_state = base_path / "config/gui_state.json"
+        project_meta = base_path / "config/project.json"
+        if project_meta.exists():
+            meta = json.loads(project_meta.read_text(encoding="utf-8"))
+            self.state.project = {"name": meta.get("name"), "base_dir": str(base_path)}
+        else:
+            self.state.project = {"name": base_path.name, "base_dir": str(base_path)}
+        self.project_name = self.state.project.get("name")
+        self.project_base = base_path
+        self.project_config_dir = base_path / "config"
+        if meta_state.exists():
+            self.state.load(meta_state)
+        overrides = self.state.path_state.get("overrides", {})
+        config_dir = Path(self.state.path_state.get("config_dir", self.project_config_dir))
+        self.path_manager = PathManager(base_dir=base_path, overrides=overrides, config_dir=config_dir)
+        self.base_var.set(str(base_path))
+        self._refresh_path_vars(reset=True)
+        self._save_state()
+        self.log(f"Projet chargé : {self.project_name} ({base_path})")
+
+    def save_project(self):
+        if not self.project_base or self.project_base == PROJECT_ROOT:
+            messagebox.showwarning("Projet", "Aucun projet dédié n'est ouvert.")
+            return
+        self.state.project = {"name": self.project_name, "base_dir": str(self.project_base)}
+        self.state.path_state = self.path_manager.to_state()
+        self._save_state()
+        meta = {"name": self.project_name, "base_dir": str(self.project_base)}
+        meta_path = self.project_base / "config/project.json"
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        messagebox.showinfo("Projet", f"Projet sauvegardé : {self.project_name}")
+
+    def close_project(self):
+        if not self.project_name:
+            return
+        self.save_project()
+        self.project_name = None
+        self.project_base = PROJECT_ROOT
+        self.project_config_dir = PROJECT_ROOT / "config"
+        self.state.project = {"name": None, "base_dir": str(PROJECT_ROOT)}
+        self.path_manager = PathManager(base_dir=PROJECT_ROOT, overrides={}, config_dir=self.project_config_dir)
+        self.state.path_state = self.path_manager.to_state()
+        self.base_var.set(str(PROJECT_ROOT))
+        self._refresh_path_vars(reset=True)
+        self._save_state()
+        self.log("Projet fermé, retour au profil par défaut.")
 
     def apply_theme(self, theme: str):
         style = ttk.Style()
@@ -416,6 +617,8 @@ class PipelineGUI:
             style.configure("Card.TLabelframe", background=bg, foreground=fg, bordercolor=accent)
             style.configure("Card.TLabelframe.Label", background=bg, foreground=fg)
             style.configure("Card.TCheckbutton", background=bg, foreground=fg)
+            style.configure("TButton", background=accent, foreground=fg, bordercolor=accent, focusthickness=0)
+            style.map("TButton", background=[("active", active)], foreground=[("active", fg)])
             style.configure("Accent.TButton", background=accent, foreground=fg, bordercolor=accent, focusthickness=0)
             style.map("Accent.TButton", background=[("active", active)], foreground=[("active", fg)])
             style.configure("TEntry", fieldbackground=entry_bg, background=entry_bg, foreground=fg)
@@ -433,6 +636,8 @@ class PipelineGUI:
             style.configure("Card.TLabelframe", background=bg, foreground=fg, bordercolor=accent)
             style.configure("Card.TLabelframe.Label", background=bg, foreground=fg)
             style.configure("Card.TCheckbutton", background=bg, foreground=fg)
+            style.configure("TButton", background="#f4f4f4", foreground=fg, bordercolor=accent, focusthickness=0)
+            style.map("TButton", background=[("active", "#e5e5e5")], foreground=[("active", fg)])
             style.configure("Accent.TButton", background="#f0f0f0", foreground=fg, bordercolor=accent, focusthickness=0)
             style.map("Accent.TButton", background=[("active", "#e5e5e5")], foreground=[("active", fg)])
             style.configure("TEntry", fieldbackground="white", background="white", foreground=fg)
@@ -442,7 +647,7 @@ class PipelineGUI:
         for dialog in list(self.dialogs):
             if dialog.winfo_exists():
                 self._apply_window_background(dialog, bg if self.state.theme == "dark" else "white")
-        self.state.save()
+        self._save_state()
 
     def _apply_window_background(self, window: tk.Tk | tk.Toplevel, color: str | None = None):
         bg_color = color or ("#0f0f0f" if self.state.theme == "dark" else "white")
@@ -457,22 +662,26 @@ class PipelineGUI:
             "relief": "flat",
             "borderwidth": 0,
         }
-        for menu in [self.menubar, self.file_menu, self.view_menu, self.options_menu]:
+        for menu in [self.menubar, self.project_menu, self.file_menu, self.view_menu, self.options_menu]:
             if menu:
                 menu.configure(**menu_opts)
 
     def _ensure_path_vars(self):
         if self.path_vars:
             return
-        for key in load_paths_config().keys():
+        for key in self.path_manager.paths_yaml.keys():
             self.path_vars[key] = tk.StringVar(value=self.path_manager.as_display_value(key))
 
-    def _refresh_path_vars(self):
+    def _refresh_path_vars(self, reset: bool = False):
         self.base_var.set(str(self.path_manager.base_dir))
+        if reset:
+            self.path_vars.clear()
+            self.resolved_labels.clear()
         if not self.path_vars:
             self._ensure_path_vars()
         for key, var in self.path_vars.items():
             var.set(self.path_manager.as_display_value(key))
+            self.path_last_values[key] = var.get()
 
     def _close_dialog(self, dialog: tk.Toplevel):
         if dialog in self.dialogs:
@@ -480,12 +689,25 @@ class PipelineGUI:
         dialog.destroy()
 
     def _choose_base_dir(self):
-        chosen = filedialog.askdirectory()
+        chosen = filedialog.askdirectory(initialdir=str(self.path_manager.base_dir))
         if chosen:
             self.base_var.set(chosen)
             self.path_manager.base_dir = Path(chosen)
             self.state.path_state["base_dir"] = chosen
-            self.state.save()
+            self._refresh_all_resolved()
+            self._save_state()
+
+    def _on_base_change(self):
+        try:
+            new_base = Path(self.base_var.get())
+        except OSError:
+            return
+        if new_base == self.path_manager.base_dir:
+            return
+        self.path_manager.base_dir = new_base
+        self.state.path_state["base_dir"] = str(new_base)
+        self._refresh_all_resolved()
+        self._save_state()
 
     def _save_paths_yaml(self):
         self._ensure_path_vars()
@@ -494,8 +716,57 @@ class PipelineGUI:
         self.path_manager.base_dir = Path(self.base_var.get())
         self.state.path_state = self.path_manager.to_state()
         self.path_manager.save_to_yaml()
-        self.state.save()
+        self._save_state()
         messagebox.showinfo("Chemins", "paths.yaml mis à jour et enregistré.")
+
+    def _choose_path_dir(self, key: str):
+        initial_dir = self.path_manager.get_path(key)
+        selected = filedialog.askdirectory(initialdir=str(initial_dir))
+        if selected:
+            old_value = self.path_vars[key].get()
+            self.path_vars[key].set(selected)
+            self._on_path_change(key, previous=old_value)
+
+    def _relative_suffix(self, value: str, prefix: str) -> Path | None:
+        value_parts = Path(value).parts
+        prefix_parts = Path(prefix).parts
+        if prefix_parts and len(value_parts) >= len(prefix_parts) and list(value_parts[: len(prefix_parts)]) == list(prefix_parts):
+            return Path(*value_parts[len(prefix_parts) :])
+        return None
+
+    def _on_path_change(self, key: str, previous: str | None = None):
+        current_value = self.path_vars[key].get()
+        old_value = previous if previous is not None else self.path_last_values.get(key, current_value)
+        if current_value == old_value:
+            return
+        self.path_manager.update_value(key, current_value)
+        self.path_last_values[key] = current_value
+        if key in self.path_manager.children_map:
+            for child in self.path_manager.children_map[key]:
+                child_var = self.path_vars[child]
+                child_value = child_var.get()
+                if Path(child_value).is_absolute():
+                    continue
+                suffix = self._relative_suffix(child_value, old_value)
+                if suffix is None:
+                    continue
+                new_child_value = Path(current_value) / suffix
+                child_var.set(str(new_child_value))
+                self.path_manager.update_value(child, child_var.get())
+                self.path_last_values[child] = child_var.get()
+        self._refresh_all_resolved()
+        self.state.path_state = self.path_manager.to_state()
+        self._save_state()
+
+    def _refresh_all_resolved(self):
+        for key in self.resolved_labels:
+            self._refresh_resolved_for_key(key)
+
+    def _refresh_resolved_for_key(self, key: str):
+        if key not in self.resolved_labels:
+            return
+        resolved = self.path_manager.get_path(key)
+        self.resolved_labels[key].configure(text=str(resolved))
 
 
 def main():

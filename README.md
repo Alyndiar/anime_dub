@@ -104,6 +104,7 @@ Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de con
 Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directement avec `launcher.bat` sous Windows :
 
 - menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
-- modification des chemins définis dans `config/paths.yaml` via le menu « Options → Configurer les chemins… » (base par défaut = racine du projet) ;
+- gestion de projets (Créer/Charger/Sauvegarder/Fermer) avec un répertoire de base par projet, ses fichiers de config dédiés dans `<projet>/config/` et un état persistant par projet ;
+- modification hiérarchique des chemins via le menu « Options → Configurer les chemins… » : chaque entrée dispose d'un bouton « … » qui ouvre un sélecteur ancré sur le répertoire parent résolu ;
 - sauvegarde et rechargement de l'état (chemins, thème sombre/clair, étape et fichier en cours) dans `config/gui_state.json` ou via « Fichier → Enregistrer sous… » ;
 - reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).
