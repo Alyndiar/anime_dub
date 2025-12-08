@@ -59,7 +59,7 @@ def run(cmd: list[str], logger: logging.Logger, verbose: bool) -> None:
     subprocess.run(cmd, check=True)
 
 
-VIDEO_EXTENSIONS = (".mkv", ".mp4", ".mov", ".m4v", ".avi")
+VIDEO_EXTENSIONS = (".mkv", ".mp4", ".mov", ".m4v", ".avi", ".ts")
 
 
 def find_source_file(stem: str, base_dir: Path, logger: logging.Logger) -> Optional[Path]:

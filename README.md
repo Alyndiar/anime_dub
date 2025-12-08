@@ -27,8 +27,9 @@ Ce projet est un pipeline local pour **doubler des animés chinois en français*
 
 Pipeline pour chaque épisode :
 
-1. **Extraction audio**  
+1. **Extraction audio**
    - `ffmpeg` extrait l’audio de la vidéo source (`data/episodes_raw/` → `data/audio_raw/`).
+   - Formats vidéo détectés : `.mkv`, `.mp4`, `.mov`, `.m4v`, `.avi`, `.ts`.
 
 2. **(Optionnel) Séparation stems**  
    - Utilisation d’outils comme **UVR / Demucs** pour séparer voix / BGM+SFX.
