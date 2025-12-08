@@ -1,0 +1,20 @@
+# config/xtts_config.yaml
+
+# Modèle XTTS à utiliser (Coqui TTS)
+model_name: "tts_models/multilingual/multi-dataset/xtts_v2"
+
+# Dispositif (cuda recommandé si dispo)
+device: "cuda"
+
+# Taux d'échantillonnage cible pour XTTS-v2
+sample_rate: 24000
+
+# Mapping personnage -> fichier audio de référence (VO)
+# Tu rempliras ces chemins quand tu auras extrait des clips propres
+reference_voices:
+  char_tangsan: "data/voices/char_tangsan/ref1.wav"
+  char_xiaowu: "data/voices/char_heroine/ref1.wav"
+  char_other: null  # par ex. une voix FR neutre ou rien
+
+# Volume relatif des voix FR lors du mix final
+voice_gain_db: 0.0

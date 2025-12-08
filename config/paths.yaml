@@ -1,0 +1,21 @@
+# config/paths.yaml
+
+# Répertoire racine des données
+data_root: "data"
+
+# Sous-répertoires
+episodes_raw_dir: "data/episodes_raw"
+audio_raw_dir: "data/audio_raw"
+audio_stems_dir: "data/audio_stems"
+diarization_dir: "data/diarization"
+
+transcripts_root: "data/transcripts"
+whisper_json_dir: "data/transcripts/whisper_json"
+zh_srt_dir: "data/transcripts/zh_srt"
+fr_srt_dir: "data/transcripts/fr_srt"
+
+segments_dir: "data/segments"
+voices_dir: "data/voices"
+speaker_bank_dir: "data/speaker_bank"
+dub_audio_dir: "data/dub_audio"
+episodes_dubbed_dir: "data/episodes_dubbed"

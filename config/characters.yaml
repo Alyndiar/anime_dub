@@ -1,0 +1,31 @@
+# config/characters.yaml
+
+# Profils de personnages pour la banque de voix.
+# Pour l'instant, une structure minimale.
+# Tu pourras enrichir cette structure à mesure que la banque se construit.
+
+characters:
+  char_tangsan:
+    display_name: "Tang San"
+    # Embedding vocal moyen (fichier .npy) – à créer plus tard avec build_speaker_bank
+    embedding_path: "data/speaker_bank/tang_san.npy"
+    # Épisodes où ce profil est valide (tu pourras ajuster)
+    episodes_range: [1, 9999]
+
+  char_xiaowu:
+    display_name: "Xiao Wu"
+    embedding_path: "data/speaker_bank/xiao_wu.npy"
+    episodes_range: [1, 9999]
+
+  char_other:
+    display_name: "Voix secondaires / inconnues"
+    embedding_path: null
+    episodes_range: [1, 9999]
+
+# Paramètres de matching
+matching:
+  # Seuil de similarité cosinus pour accepter un match vers un personnage connu
+  similarity_threshold: 0.85
+
+  # Personnage de fallback lorsque la similarité est trop faible
+  fallback_character: "char_other"
