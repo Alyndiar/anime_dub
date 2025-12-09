@@ -85,7 +85,7 @@ def diarize_all(
         )
         logger.info(
             "Astuce : l'environnement 'anime-dub-diar' en config/diarization_env.yml installe"
-            " directement un couple torch==2.2.2 / torchcodec==0.2.0 / ffmpeg==6 connu comme stable"
+            " directement un couple torch==2.2.2 / torchcodec==0.7.0 / ffmpeg==6 connu comme stable"
             " pour pyannote 3.1."
         )
 
