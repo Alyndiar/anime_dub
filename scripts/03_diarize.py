@@ -44,8 +44,8 @@ def diarize_all(
     logger.info("Initialisation du pipeline pyannote (HF_TOKEN présent)")
 
     # Vérifie si on tourne dans un environnement dédié pour la diarisation.
-    # Cela permet de rester sur une pile PyTorch/torchcodec/ffmpeg connue comme compatible
-    # (voir config/diarization_env.yml).
+    # Cela permet de rester sur une pile PyTorch/pyannote/ffmpeg connue comme compatible
+    # (voir config/diarization_env.yml). torchcodec est optionnel grâce au fallback.
     diar_env = os.environ.get("CONDA_DEFAULT_ENV") or os.environ.get("VIRTUAL_ENV")
     if diar_env and "diar" not in diar_env:
         logger.warning(
@@ -66,27 +66,28 @@ def diarize_all(
     torch.serialization.add_safe_globals([torch.torch_version.TorchVersion, Specifications])
 
     # Le pipeline pyannote s'appuie sur torchcodec pour le décodage audio. En cas
-    # d'installation manquante ou cassée (DLL introuvable), on avertit avec une
-    # commande de réparation explicitement loggée.
+    # d'installation manquante ou cassée (DLL introuvable), on avertit et on bascule
+    # sur un préchargement manuel de l'audio pour éviter le blocage.
+    has_torchcodec = True
     try:
         import torchcodec  # noqa: F401
     except Exception as exc:  # pragma: no cover - avertissement runtime seulement
+        has_torchcodec = False
         logger.warning(
             "torchcodec n'est pas disponible ou mal installé : %s", exc,
         )
         logger.info(
-            "Réinstalle torchcodec dans l'environnement courant (PyTorch %s) avec :\n"
-            "  pip install --upgrade --no-deps torchcodec",
+            "Fallback : l'audio sera préchargé via torchaudio/soundfile pour contourner"
+            " l'absence de torchcodec.",
+        )
+        logger.info(
+            "Si une roue Windows est publiée ultérieurement, installe-la ainsi dans l'environnement"
+            " courant (PyTorch %s) :\n  pip install --upgrade --no-deps torchcodec",
             torch.__version__,
         )
         logger.info(
             "Consulte la table de compatibilité torchcodec/ffmpeg si besoin : "
             "https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec",
-        )
-        logger.info(
-            "Astuce : l'environnement 'anime-dub-diar' en config/diarization_env.yml installe"
-            " directement un couple torch==2.2.2 / torchcodec==0.7.0 / ffmpeg==6 connu comme stable"
-            " pour pyannote 3.1."
         )
 
     pipeline = Pipeline.from_pretrained(
@@ -100,7 +101,30 @@ def diarize_all(
         rttm_path = diar_dir / f"{stem}.rttm"
 
         logger.info("Diarisation en cours : %s", wav)
-        diarization = pipeline(str(wav))
+
+        diar_input: str | dict
+        if has_torchcodec:
+            diar_input = str(wav)
+        else:  # précharge pour contourner torchcodec manquant
+            try:
+                import torchaudio
+
+                waveform, sample_rate = torchaudio.load(wav)
+                diar_input = {"waveform": waveform, "sample_rate": sample_rate}
+            except Exception as ta_exc:  # pragma: no cover - fallback de secours
+                import soundfile as sf
+
+                audio, sample_rate = sf.read(wav, dtype="float32")
+                if audio.ndim == 1:
+                    waveform = torch.from_numpy(audio).unsqueeze(0)
+                else:
+                    waveform = torch.from_numpy(audio).T
+                diar_input = {"waveform": waveform, "sample_rate": sample_rate}
+                logger.warning(
+                    "Décodage via torchaudio impossible (%s). Fallback soundfile utilisé.", ta_exc,
+                )
+
+        diarization = pipeline(diar_input)
 
         with rttm_path.open("w", encoding="utf-8") as f:
             diarization.write_rttm(f)

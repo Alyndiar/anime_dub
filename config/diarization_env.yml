@@ -10,12 +10,11 @@ dependencies:
   - torchvision=0.17.2
   - torchaudio=2.2.2
   - pytorch-cuda=12.1  # CUDA 12.1 build compatible with RTX 4080
-  - ffmpeg=6.*         # version validée avec torchcodec 0.7.0 et pyannote.audio 3.1.1
+  - ffmpeg=6.*         # validé avec pyannote.audio 3.1.1 ; torchcodec optionnel (fallback torchaudio)
   - pip
   - numpy
   - openssl
   - pip:
       - pyannote.audio==3.1.1
-      - torchcodec==0.7.0
       - soundfile
       - librosa

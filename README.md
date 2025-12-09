@@ -200,11 +200,9 @@ pip check
 Gardez les installations critiques (torch/torchaudio/torchvision, demucs, TTS) dans le même environnement pour éviter les
 incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 
-### Environnement dédié pour la diarisation (PyTorch / torchcodec / ffmpeg)
+### Environnement dédié pour la diarisation (PyTorch / pyannote / ffmpeg)
 
-`pyannote.audio` dépend de `torchcodec` pour décoder les WAV en interne. Avec certaines versions récentes de PyTorch (ex. 2.8.0
-ou ultérieur), l’installation de `torchcodec` peut échouer ou ne plus proposer de DLL compatibles, ce qui bloque la diarisation
-(`03_diarize.py`). Pour isoler ces contraintes, utilisez un environnement conda séparé, pré-configuré dans `config/diarization_env.yml` :
+`pyannote.audio` essaie d’utiliser `torchcodec` pour décoder les WAV. Sur Windows, aucune roue torchcodec compatible CUDA 12.1 n’est actuellement publiée sur PyPI, ce qui génère des avertissements au lancement. Le script `03_diarize.py` contourne automatiquement l’absence de torchcodec en préchargeant l’audio via `torchaudio` (fallback `soundfile`). Pour isoler la pile PyTorch/pyannote/ffmpeg, utilisez un environnement conda séparé, pré-configuré dans `config/diarization_env.yml` :
 
 ```bash
 # Création (une seule fois)
@@ -214,15 +212,13 @@ conda env create -f config/diarization_env.yml
 conda activate anime-dub-diar
 ```
 
-> ⚠️ Si la résolution échoue avec un message `cuda-nvtx >=12.1,<12.2` introuvable, vérifiez que le canal `nvidia` est bien
-> activé (il est déjà listé dans `config/diarization_env.yml`). Vous pouvez l’ajouter globalement au besoin :
+> ⚠️ Si la résolution échoue avec un message `cuda-nvtx >=12.1,<12.2` introuvable, vérifiez que le canal `nvidia` est bien activé (il est déjà listé dans `config/diarization_env.yml`). Vous pouvez l’ajouter globalement au besoin :
 >
 > ```bash
 > conda config --add channels nvidia
 > ```
 
-Cet environnement installe un couple stable PyTorch 2.2.2 (CUDA 12.1) / torchcodec 0.7.0 / ffmpeg 6, testé avec pyannote 3.1.
-Si `torchcodec` reste introuvable ou qu’une version plus ancienne est installée, réinstallez-le sans ses dépendances (pour ne pas écraser PyTorch) :
+Cet environnement fournit PyTorch 2.2.2 (CUDA 12.1), pyannote.audio 3.1.1 et ffmpeg 6. torchcodec n’y est **pas** installé par défaut pour éviter les échecs Windows ; s’il devient disponible ultérieurement (roue compatible Windows/CUDA), installez-le dans cet environnement sans toucher à PyTorch :
 
 ```bash
 pip install --upgrade --no-deps torchcodec
@@ -234,17 +230,17 @@ Pour vérifier la stack audio avant d’exécuter la diarisation :
 python - <<'PY'
 import torch
 print("PyTorch", torch.__version__, "CUDA", torch.version.cuda)
-import torchcodec
-print("torchcodec", torchcodec.__version__)
 import pyannote.audio
 print("pyannote.audio", pyannote.audio.__version__)
+try:
+    import torchcodec
+    print("torchcodec", torchcodec.__version__)
+except ImportError:
+    print("torchcodec absent : fallback torchaudio/soundfile actif pour le décodage")
 PY
 ```
 
-**Compatibilité pyannote :** le fichier `config/diarization_env.yml` inclut `pyannote.audio==3.1.1` et les dépendances critiques
-(PyTorch 2.2.2 CUDA 12.1, torchcodec 0.7.0, ffmpeg 6). Cette combinaison suit la matrice de compatibilité torch/torchcodec
-recommandée et a été vérifiée pour charger les pipelines de diarisation avec HF_TOKEN. Si vous devez utiliser une autre version
-de pyannote, mettez à jour `config/diarization_env.yml` en conséquence, mais conservez un couple torch/torchcodec/ffmpeg cohérent.
+**Compatibilité pyannote :** le fichier `config/diarization_env.yml` inclut `pyannote.audio==3.1.1` et les dépendances critiques (PyTorch 2.2.2 CUDA 12.1, ffmpeg 6). torchcodec reste optionnel grâce au préchargement audio dans `03_diarize.py`. Si vous installez torchcodec manuellement, vérifiez la cohérence torch/ffmpeg indiquée dans sa documentation. Si vous devez utiliser une autre version de pyannote, mettez à jour `config/diarization_env.yml` en conséquence et gardez une pile PyTorch/ffmpeg cohérente.
 
 Lancez ensuite la diarisation sur un épisode :
 
