@@ -124,7 +124,7 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 
 ```bash
 pip install --upgrade demucs  # installe également PyTorch/torchaudio
-python scripts/02_separate_stems.py --tool demucs --demucs-model htdemucs --demucs-device cuda
+python scripts/02_separate_stems.py --tool demucs --demucs-model htdemucs
 ```
 
 - Alternative UVR : si vous disposez d'une commande UVR (CLI portable ou pip) acceptant les arguments d'entrée/sortie, passez-la via `--tool uvr` et le template `--uvr-command` (placeholders `{input}`, `{output_dir}`, `{model}`), par exemple :
@@ -139,6 +139,8 @@ python scripts/02_separate_stems.py \
 ```
 
 Dans les deux cas, la commande accepte `--stem` pour cibler un épisode et `--overwrite` pour régénérer des stems déjà présents.
+`--demucs-device` vaut `auto` par défaut : si CUDA est indisponible (PyTorch compilé CPU), le script bascule automatiquement sur
+le CPU pour éviter un échec de séparation.
 
 ### CLI ou GUI ? Pourquoi conserver les deux
 

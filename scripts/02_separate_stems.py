@@ -18,6 +18,8 @@ import subprocess
 from pathlib import Path
 from typing import Iterable, Tuple
 
+import torch
+
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
 
@@ -71,6 +73,17 @@ def separate_with_demucs(
     demucs_out = workspace / "demucs"
     demucs_out.mkdir(parents=True, exist_ok=True)
 
+    if device == "auto":
+        chosen_device = "cuda" if torch.cuda.is_available() else "cpu"
+        if not torch.cuda.is_available():
+            log("CUDA indisponible, utilisation du CPU pour Demucs.", logger, level=logging.WARNING)
+    elif device.startswith("cuda") and not torch.cuda.is_available():
+        log("CUDA demandé mais PyTorch n'a pas été compilé avec CUDA, bascule sur CPU.", logger, level=logging.WARNING)
+        chosen_device = "cpu"
+    else:
+        chosen_device = device
+    log(f"Appareil Demucs sélectionné : {chosen_device}", logger, level=logging.INFO if not verbose else logging.DEBUG)
+
     cmd = [
         "python",
         "-m",
@@ -82,7 +95,7 @@ def separate_with_demucs(
         "--out",
         str(demucs_out),
         "-d",
-        device,
+        chosen_device,
         str(audio_path),
     ]
     run(cmd, logger, verbose)
@@ -206,7 +219,11 @@ def parse_args() -> argparse.Namespace:
         help="Outil utilisé pour la séparation (demucs recommandé)",
     )
     parser.add_argument("--demucs-model", default="htdemucs", help="Modèle Demucs à utiliser (ex: htdemucs, htdemucs_ft)")
-    parser.add_argument("--demucs-device", default="cuda", help="Appareil Demucs (cuda ou cpu)")
+    parser.add_argument(
+        "--demucs-device",
+        default="auto",
+        help="Appareil Demucs (auto, cuda ou cpu). 'auto' choisit cuda si disponible, sinon cpu.",
+    )
     parser.add_argument(
         "--uvr-command",
         help="Commande UVR complète à exécuter (template avec {input}, {output_dir}, {model})",
