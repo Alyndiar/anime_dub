@@ -6,6 +6,7 @@ from typing import Iterable
 
 import torch
 from pyannote.audio import Pipeline
+from pyannote.audio.core.task import Specifications
 
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
@@ -43,10 +44,29 @@ def diarize_all(
     logger.info("Initialisation du pipeline pyannote (HF_TOKEN présent)")
 
     # PyTorch >= 2.6 charge les checkpoints en mode "weights_only=True" par défaut.
-    # Certains checkpoints pyannote utilisent le type torch.torch_version.TorchVersion
-    # dans leur state dict. On l'ajoute donc à la liste des globals autorisés pour
-    # éviter l'erreur "Unsupported global ... TorchVersion" lors du chargement.
-    torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+    # Certains checkpoints pyannote utilisent des classes personnalisées (TorchVersion,
+    # Specifications) dans leur state dict. On les ajoute donc aux globals autorisés
+    # pour éviter les erreurs "Unsupported global ..." lors du chargement.
+    torch.serialization.add_safe_globals([torch.torch_version.TorchVersion, Specifications])
+
+    # Le pipeline pyannote s'appuie sur torchcodec pour le décodage audio. En cas
+    # d'installation manquante ou cassée (DLL introuvable), on avertit avec une
+    # commande de réparation explicitement loggée.
+    try:
+        import torchcodec  # noqa: F401
+    except Exception as exc:  # pragma: no cover - avertissement runtime seulement
+        logger.warning(
+            "torchcodec n'est pas disponible ou mal installé : %s", exc,
+        )
+        logger.info(
+            "Réinstalle torchcodec dans l'environnement courant (PyTorch %s) avec :\n"
+            "  pip install --upgrade --no-deps torchcodec",
+            torch.__version__,
+        )
+        logger.info(
+            "Consulte la table de compatibilité torchcodec/ffmpeg si besoin : "
+            "https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec",
+        )
 
     pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
