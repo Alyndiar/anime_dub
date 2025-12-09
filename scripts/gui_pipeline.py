@@ -410,12 +410,20 @@ class WorkflowRunner:
     def _run_script(self, step: WorkflowStep, units: list[str]):
         script_path = PROJECT_ROOT / "scripts" / step.script
         if step.step_id == "08" and self.state.tts_env_name:
-            cmd = [self.state.conda_executable, "run", "-n", self.state.tts_env_name, "python", str(script_path)]
+            cmd = [
+                self.state.conda_executable,
+                "run",
+                "-n",
+                self.state.tts_env_name,
+                "python",
+                "-u",
+                str(script_path),
+            ]
             self.log(
                 f"[info] Étape 08 (XTTS) exécutée via {self.state.conda_executable} run -n {self.state.tts_env_name}"
             )
         else:
-            cmd = ["python", str(script_path)]
+            cmd = ["python", "-u", str(script_path)]
         stems = [u for u in units if u != "_all_"]
         for stem in stems:
             cmd.extend(["--stem", stem])
@@ -424,6 +432,7 @@ class WorkflowRunner:
         env = os.environ.copy()
         env["ANIME_DUB_PROJECT_ROOT"] = str(self.path_manager.base_dir)
         env["ANIME_DUB_CONFIG_DIR"] = str(self.path_manager.config_dir)
+        env.setdefault("PYTHONUNBUFFERED", "1")
         if self.state.verbose:
             env["ANIME_DUB_VERBOSE"] = "1"
         if stems:

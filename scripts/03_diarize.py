@@ -33,7 +33,12 @@ def diarize_all(
     diar_dir = paths["diarization_dir"]
 
     hf_token = os.environ.get("HF_TOKEN")
-    assert hf_token, "Définis HF_TOKEN=ton_token_HF"
+    if not hf_token:
+        logger.error(
+            "Token Hugging Face manquant (HF_TOKEN).\n"
+            "Renseigne HF_TOKEN=ton_token_HF dans l'environnement avant de lancer la diarisation."
+        )
+        raise SystemExit(1)
     logger.info("Initialisation du pipeline pyannote (HF_TOKEN présent)")
 
     pipeline = Pipeline.from_pretrained(
