@@ -210,6 +210,69 @@ incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
   roue actuelle ne prend en charge `numpy 2.2.6` ou `pandas 2.3.x`. Conservez donc le couple `numpy 1.22.x` / `pandas <2.0`
   pour les étapes TTS/gruut, et utilisez un environnement séparé si d’autres dépendances exigent des versions plus récentes.
 
+### Dépendances par étape et stratégies d’environnement
+
+| Étape | Bibliothèques clés | Points d’attention |
+| --- | --- | --- |
+| 01 Extraction audio | `ffmpeg` (CLI) | Disponible via le système ou conda (`conda install -c conda-forge ffmpeg`). |
+| 02 Séparation stems | `demucs` (→ `torch`, `torchaudio`), option `uvr` | Aligner `torch/torchaudio/torchvision` sur la même build CUDA (ex. cu121/cu128). Fallback CPU possible, `--demucs-require-cuda` pour forcer l’échec si le GPU n’est pas accessible. |
+| 03 Diarisation | `pyannote.audio` (→ `torch`), token HF requis | Nécessite la même pile torch que Demucs pour éviter des conflits (versions, CUDA). |
+| 04 Transcription | `faster-whisper` (→ `ctranslate2`, `tokenizers`) | Indépendant de torch, mais gourmand en RAM/GPU ; compatible avec numpy récent. |
+| 05 Traduction | `transformers`, `torch` | Même contrainte torch/CUDA que les étapes 02/03 pour mutualiser les GPU. |
+| 06 Banque de voix | `pyannote.audio`, `numpy`, `soundfile` | Hérite des contraintes torch + HF token. |
+| 07 Attribution personnages | `pyannote.audio`, `numpy`, `soundfile`, `yaml` | Même pile torch/numpy que 06. |
+| 08 Synthèse XTTS | `TTS` (Coqui), `gruut`, `numpy==1.22.x`, `pandas<2.0`, `soundfile` | **Incompatible avec numpy/pandas ≥2.x** ; à isoler si d’autres tâches requièrent numpy/pandas récents. |
+| 09 Mix audio | `ffmpeg` (CLI) | Pas de dépendance Python supplémentaire. |
+| 10 Remux | `ffmpeg` (CLI) | Idem. |
+
+**Quand utiliser plusieurs environnements ?**
+
+- **Environnement unique (simple)** : fonctionne si vous acceptez de rester sur `numpy 1.22.x` / `pandas<2.0` pour satisfaire `TTS/gruut`. Installez torch/torchaudio/torchvision CUDA, demucs, pyannote, transformers, faster-whisper et TTS dans le même env (Python 3.10) puis vérifiez avec `pip check`.
+- **Environnements séparés (recommandé si numpy/pandas 2.x sont nécessaires ailleurs)** :
+  - `anime_dub_core` : torch CUDA + demucs + pyannote + faster-whisper + transformers (libres vis-à-vis de numpy 2.x).
+  - `anime_dub_tts` : `TTS==0.22.0`, `gruut==2.2.3`, `numpy==1.22.0`, `pandas>=1.4,<2.0`, `soundfile` ; pas de dépendance torch nécessaire ici.
+
+**Exécution dans des environnements différents**
+
+1) Créez les environnements :
+
+```bash
+# Core (GPU + numpy/pandas récents possibles)
+conda create -n anime_dub_core python=3.10
+conda activate anime_dub_core
+pip install --upgrade "torch==2.8.0+cu128" "torchaudio==2.8.0+cu128" "torchvision==0.23.0+cu128" \
+  --extra-index-url https://download.pytorch.org/whl/cu128
+pip install demucs pyannote.audio faster-whisper transformers soundfile
+
+# TTS (contraintes numpy/pandas <2.0)
+conda create -n anime_dub_tts python=3.10
+conda activate anime_dub_tts
+pip install "numpy==1.22.0" "pandas>=1.4,<2.0" "tts==0.22.0" "gruut==2.2.3" soundfile
+pip check
+```
+
+2) Exécutez les étapes 01→07 et 09→10 dans `anime_dub_core` (GUI ou CLI) :
+
+```bash
+conda activate anime_dub_core
+python scripts/01_extract_audio.py --stem <episode>
+...
+python scripts/07_assign_characters.py --stem <episode>
+python scripts/09_mix_audio.py --stem <episode>
+python scripts/10_remux.py --stem <episode>
+```
+
+3) Exécutez l’étape 08 dans `anime_dub_tts` en ciblant le même projet/racine (les fichiers d’entrée/sortie restent sous `data/`) :
+
+```bash
+conda run -n anime_dub_tts \
+  ANIME_DUB_PROJECT_ROOT="<chemin_du_projet>" ANIME_DUB_CONFIG_DIR="<chemin_du_projet>/config" \
+  python scripts/08_synthesize_xtts.py --stem <episode> --verbose
+```
+
+Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
+
+
 ### CLI ou GUI ? Pourquoi conserver les deux
 
 - Les scripts `scripts/0X_*.py` restent **exécutables en ligne de commande** (contrainte historique du projet) : chaque script gère ses propres arguments (`--stem`, `--verbose`, etc.) et fonctionne sans le GUI. Cela reste indispensable pour les usages batch, le débogage ciblé et l’exécution sur des machines sans environnement graphique.
