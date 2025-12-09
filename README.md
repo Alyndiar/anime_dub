@@ -168,6 +168,38 @@ Dans les deux cas, la commande accepte `--stem` pour cibler un épisode et `--ov
 le CPU pour éviter un échec de séparation ; utilisez `--demucs-require-cuda` pour forcer un échec explicite lorsque le GPU n'est
 pas utilisable.
 
+### Résoudre les conflits pip (numpy/pandas avec gruut et TTS)
+
+Si `pip check` ou l’installation affiche des messages du type :
+
+```
+gruut 2.2.3 has requirement numpy<2.0.0,>=1.19.0, but you have numpy 2.2.6.
+tts 0.22.0 has requirement numpy==1.22.0; python_version <= "3.10", but you have numpy 2.2.6.
+tts 0.22.0 has requirement pandas<2.0,>=1.4, but you have pandas 2.3.3.
+```
+
+alignez les versions pour respecter les contraintes de gruut/TTS (et éviter de casser les autres dépendances) :
+
+1. Dans l’environnement actuel, repassez sur des versions compatibles puis vérifiez avec `pip check` :
+
+```bash
+pip install --upgrade "numpy==1.22.0" "pandas>=1.4,<2.0" "tts==0.22.0" "gruut==2.2.3"
+pip check
+```
+
+2. Si d’autres paquets nécessitent numpy ≥2.x, créez un environnement dédié pour le pipeline (Python 3.10 recommandé), installez
+   d’abord les dépendances de base (ffmpeg, demucs, etc.), puis appliquez les versions compatibles ci-dessus. Exemple conda :
+
+```bash
+conda create -n anime_dub_py310 python=3.10
+conda activate anime_dub_py310
+pip install --upgrade "numpy==1.22.0" "pandas>=1.4,<2.0" "tts==0.22.0" "gruut==2.2.3"
+pip check
+```
+
+Gardez les installations critiques (torch/torchaudio/torchvision, demucs, TTS) dans le même environnement pour éviter les
+incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
+
 ### CLI ou GUI ? Pourquoi conserver les deux
 
 - Les scripts `scripts/0X_*.py` restent **exécutables en ligne de commande** (contrainte historique du projet) : chaque script gère ses propres arguments (`--stem`, `--verbose`, etc.) et fonctionne sans le GUI. Cela reste indispensable pour les usages batch, le débogage ciblé et l’exécution sur des machines sans environnement graphique.
