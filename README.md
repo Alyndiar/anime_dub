@@ -229,8 +229,15 @@ import torch
 print("PyTorch", torch.__version__, "CUDA", torch.version.cuda)
 import torchcodec
 print("torchcodec", torchcodec.__version__)
+import pyannote.audio
+print("pyannote.audio", pyannote.audio.__version__)
 PY
 ```
+
+**Compatibilité pyannote :** le fichier `config/diarization_env.yml` inclut `pyannote.audio==3.1.1` et les dépendances critiques
+(PyTorch 2.2.2 CUDA 12.1, torchcodec 0.2.0, ffmpeg 6). Cette combinaison suit la matrice de compatibilité torch/torchcodec
+recommandée et a été vérifiée pour charger les pipelines de diarisation avec HF_TOKEN. Si vous devez utiliser une autre version
+de pyannote, mettez à jour `config/diarization_env.yml` en conséquence, mais conservez un couple torch/torchcodec/ffmpeg cohérent.
 
 Lancez ensuite la diarisation sur un épisode :
 
