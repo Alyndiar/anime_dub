@@ -200,6 +200,16 @@ pip check
 Gardez les installations critiques (torch/torchaudio/torchvision, demucs, TTS) dans le même environnement pour éviter les
 incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 
+**Questions fréquentes :**
+
+- **Qu’est-ce que gruut ?** Bibliothèque de **génération phonémique** (tokenisation, phonétisation) utilisée par Coqui TTS ; la
+  dernière version publiée (`gruut 2.2.3`) impose `numpy < 2.0.0` et n’expose pas de build compatible avec `numpy 2.x`.
+- **Existe-t-il une version gruut compatible avec numpy 2.2.6 ?** Non à date : il faut soit **revenir à numpy 1.22.x** (ou
+  toute version <2.0) pour satisfaire `gruut`, soit isoler les besoins numpy 2.x dans **un autre environnement**.
+- **TTS compatible avec numpy/pandas récents ?** `tts 0.22.0` requiert `numpy==1.22.0` (Python ≤3.10) et `pandas<2.0`. Aucune
+  roue actuelle ne prend en charge `numpy 2.2.6` ou `pandas 2.3.x`. Conservez donc le couple `numpy 1.22.x` / `pandas <2.0`
+  pour les étapes TTS/gruut, et utilisez un environnement séparé si d’autres dépendances exigent des versions plus récentes.
+
 ### CLI ou GUI ? Pourquoi conserver les deux
 
 - Les scripts `scripts/0X_*.py` restent **exécutables en ligne de commande** (contrainte historique du projet) : chaque script gère ses propres arguments (`--stem`, `--verbose`, etc.) et fonctionne sans le GUI. Cela reste indispensable pour les usages batch, le débogage ciblé et l’exécution sur des machines sans environnement graphique.
