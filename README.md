@@ -270,6 +270,10 @@ conda run -n anime_dub_tts \
   python scripts/08_synthesize_xtts.py --stem <episode> --verbose
 ```
 
+4) Via le GUI : ouvrez le menu **Options → Configurer l'environnement TTS…**, renseignez `anime_dub_tts` (et le binaire `conda`
+si nécessaire). Le GUI lancera alors automatiquement l’étape **08 Synthèse XTTS** avec `conda run -n <env> python ...` tout en
+conservant l’environnement courant pour les autres étapes.
+
 Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
 
 
