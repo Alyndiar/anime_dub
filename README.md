@@ -200,6 +200,44 @@ pip check
 Gardez les installations critiques (torch/torchaudio/torchvision, demucs, TTS) dans le même environnement pour éviter les
 incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 
+### Environnement dédié pour la diarisation (PyTorch / torchcodec / ffmpeg)
+
+`pyannote.audio` dépend de `torchcodec` pour décoder les WAV en interne. Avec certaines versions récentes de PyTorch (ex. 2.8.0
+ou ultérieur), l’installation de `torchcodec` peut échouer ou ne plus proposer de DLL compatibles, ce qui bloque la diarisation
+(`03_diarize.py`). Pour isoler ces contraintes, utilisez un environnement conda séparé, pré-configuré dans `config/diarization_env.yml` :
+
+```bash
+# Création (une seule fois)
+conda env create -f config/diarization_env.yml
+
+# Activation avant de lancer le GUI ou 03_diarize.py
+conda activate anime-dub-diar
+```
+
+Cet environnement installe un couple stable PyTorch 2.2.2 (CUDA 12.1) / torchcodec 0.2.0 / ffmpeg 6, testé avec pyannote 3.1.
+Si `torchcodec` reste introuvable, réinstallez-le sans ses dépendances (pour ne pas écraser PyTorch) :
+
+```bash
+pip install --upgrade --no-deps torchcodec
+```
+
+Pour vérifier la stack audio avant d’exécuter la diarisation :
+
+```bash
+python - <<'PY'
+import torch
+print("PyTorch", torch.__version__, "CUDA", torch.version.cuda)
+import torchcodec
+print("torchcodec", torchcodec.__version__)
+PY
+```
+
+Lancez ensuite la diarisation sur un épisode :
+
+```bash
+python -u scripts/03_diarize.py --stem "Soul land episode 01 vostfr"
+```
+
 **Questions fréquentes :**
 
 - **Qu’est-ce que gruut ?** Bibliothèque de **génération phonémique** (tokenisation, phonétisation) utilisée par Coqui TTS ; la

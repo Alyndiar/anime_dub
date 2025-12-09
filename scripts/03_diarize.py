@@ -43,6 +43,22 @@ def diarize_all(
         raise SystemExit(1)
     logger.info("Initialisation du pipeline pyannote (HF_TOKEN présent)")
 
+    # Vérifie si on tourne dans un environnement dédié pour la diarisation.
+    # Cela permet de rester sur une pile PyTorch/torchcodec/ffmpeg connue comme compatible
+    # (voir config/diarization_env.yml).
+    diar_env = os.environ.get("CONDA_DEFAULT_ENV") or os.environ.get("VIRTUAL_ENV")
+    if diar_env and "diar" not in diar_env:
+        logger.warning(
+            "Environnement actuel (%s) différent de l'environnement dédié diarisation."
+            " Utilise de préférence 'anime-dub-diar' défini dans config/diarization_env.yml",
+            diar_env,
+        )
+    elif not diar_env:
+        logger.info(
+            "Aucun environnement virtuel détecté. Pour éviter les conflits de dépendances,"
+            " crée et active l'environnement conda 'anime-dub-diar' (config/diarization_env.yml)."
+        )
+
     # PyTorch >= 2.6 charge les checkpoints en mode "weights_only=True" par défaut.
     # Certains checkpoints pyannote utilisent des classes personnalisées (TorchVersion,
     # Specifications) dans leur state dict. On les ajoute donc aux globals autorisés
@@ -66,6 +82,11 @@ def diarize_all(
         logger.info(
             "Consulte la table de compatibilité torchcodec/ffmpeg si besoin : "
             "https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec",
+        )
+        logger.info(
+            "Astuce : l'environnement 'anime-dub-diar' en config/diarization_env.yml installe"
+            " directement un couple torch==2.2.2 / torchcodec==0.2.0 / ffmpeg==6 connu comme stable"
+            " pour pyannote 3.1."
         )
 
     pipeline = Pipeline.from_pretrained(
