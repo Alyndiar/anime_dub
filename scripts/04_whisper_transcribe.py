@@ -1,4 +1,4 @@
-# scripts/03_whisper_transcribe.py
+# scripts/04_whisper_transcribe.py
 import argparse
 import json
 import logging

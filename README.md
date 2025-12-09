@@ -82,15 +82,16 @@ anime-dub/
 │  └─ episodes_dubbed/       # Vidéos remuxées avec piste FR
 ├─ scripts/
 │  ├─ 01_extract_audio.py
-│  ├─ 02_diarize.py
-│  ├─ 03_whisper_transcribe.py
-│  ├─ 04_translate_nllb.py
-│  ├─ 05_build_speaker_bank.py
-│  ├─ 06_assign_characters.py
-│  ├─ 07_synthesize_xtts.py
-│  ├─ 08_mix_audio.py
-│  ├─ 09_remux.py
-│  └─ gui_pipeline.py        # GUI pour orchestrer les étapes 01→09
+│  ├─ 02_separate_stems.py
+│  ├─ 03_diarize.py
+│  ├─ 04_whisper_transcribe.py
+│  ├─ 05_translate_nllb.py
+│  ├─ 06_build_speaker_bank.py
+│  ├─ 07_assign_characters.py
+│  ├─ 08_synthesize_xtts.py
+│  ├─ 09_mix_audio.py
+│  ├─ 10_remux.py
+│  └─ gui_pipeline.py        # GUI pour orchestrer les étapes 01→10
 └─ config/
    ├─ paths.yaml
    ├─ characters.yaml
@@ -104,7 +105,7 @@ Les scripts utilisent `scripts/utils_config.py` pour charger ces fichiers de con
 
 Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directement avec `launcher.bat` sous Windows :
 
-- menus pour lancer les étapes 01→09 avec arrêt automatique après chaque fichier, répertoire ou étape ;
+- menus pour lancer les étapes 01→10 avec arrêt automatique après chaque fichier, répertoire ou étape ;
 - ciblage des épisodes : traitement complet, mode « 1 seul épisode » avec sélection de fichier dédiée ou sélection multi-fichiers via un explorateur ;
 - gestion de projets (Créer/Charger/Sauvegarder/Fermer) avec un répertoire de base par projet, ses fichiers de config dédiés dans `<projet>/config/` et un état persistant par projet ;
 - création guidée : saisie du titre d'animé et du nom de projet, proposition d'un dossier dédié (inexistant) pré-rempli avec le fichier `<nom_du_projet>.yaml`, les configs par défaut et la hiérarchie `data/` ;
@@ -112,8 +113,169 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 - sauvegarde et rechargement de l'état (chemins, thème sombre/clair, étape et fichier en cours) dans `config/gui_state.json` ou via « Fichier → Enregistrer sous… » ;
 - lors de l'exécution d'une étape, le GUI exporte les variables d'environnement `ANIME_DUB_PROJECT_ROOT` et `ANIME_DUB_CONFIG_DIR` pour que les helpers (`get_data_path`, `ensure_directories`, etc.) résolvent correctement les chemins du projet sélectionné ;
 - option « Verbose » dans le menu Options ou la barre de commandes pour tracer en détail les appels des scripts (commande, environnement `ANIME_DUB_VERBOSE`, paramètre `--verbose` lorsque disponible) ;
-- les logs sont affichés dans la fenêtre et simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
-- reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/03_whisper_transcribe.py --stem episode_001`).
+- les logs s'affichent en continu pendant l'exécution (stdout/stderr streaming) et sont simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
+- reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/04_whisper_transcribe.py --stem episode_001`).
+
+### Étape 02 : séparation voix / instrumental
+
+- Entrée attendue : les WAV complets (`*_full.wav`) produits par `01_extract_audio` dans `data/audio_raw/`.
+- Sortie : deux fichiers par stem dans `data/audio_stems/` (`<stem>_vocals.wav` et `<stem>_instrumental.wav`).
+- Outil recommandé : **Demucs** (two-stems vocals) pour limiter les dépendances :
+
+```bash
+pip install --upgrade demucs  # installe également PyTorch/torchaudio
+python scripts/02_separate_stems.py --tool demucs --demucs-model htdemucs
+```
+
+- Pour exploiter le GPU (ex. RTX 4080), installez une build CUDA de PyTorch (sinon Demucs repassera en CPU et journalisera `torch.version.cuda=None`). Exemple pour CUDA 12.1 :
+
+```bash
+pip install --upgrade "torch==2.5.1+cu121" "torchaudio==2.5.1+cu121" --index-url https://download.pytorch.org/whl/cu121
+```
+
+Vérifiez ensuite :
+
+```bash
+python - <<'PY'
+import torch
+print(torch.__version__, torch.version.cuda, torch.cuda.is_available())
+if torch.cuda.is_available():
+    print(torch.cuda.get_device_name(torch.cuda.current_device()))
+PY
+```
+
+- Si vous utilisez déjà une build GPU (ex. `torch==2.8.0+cu128`) mais que Demucs bascule en CPU, forcez la vérification via :
+
+```bash
+python scripts/02_separate_stems.py --demucs-device cuda --demucs-require-cuda --stem mon_episode --verbose
+```
+
+Cette commande lèvera une erreur explicite si CUDA est indisponible dans l'environnement du script. Vérifiez alors que le driver NVIDIA est installé et que `demucs` est bien exécuté dans la même venv/conda que votre PyTorch CUDA.
+
+- Alternative UVR : si vous disposez d'une commande UVR (CLI portable ou pip) acceptant les arguments d'entrée/sortie, passez-la via `--tool uvr` et le template `--uvr-command` (placeholders `{input}`, `{output_dir}`, `{model}`), par exemple :
+
+```bash
+python scripts/02_separate_stems.py \
+  --tool uvr \
+  --uvr-command "python inference.py --input {input} --output_dir {output_dir} --model {model}" \
+  --uvr-model C:/models/uvr5/model.pth \
+  --uvr-vocals-name vocals.wav \
+  --uvr-instrumental-name instrumental.wav
+```
+
+Dans les deux cas, la commande accepte `--stem` pour cibler un épisode et `--overwrite` pour régénérer des stems déjà présents.
+`--demucs-device` vaut `auto` par défaut : si CUDA est indisponible (PyTorch compilé CPU), le script bascule automatiquement sur
+le CPU pour éviter un échec de séparation ; utilisez `--demucs-require-cuda` pour forcer un échec explicite lorsque le GPU n'est
+pas utilisable.
+
+### Résoudre les conflits pip (numpy/pandas avec gruut et TTS)
+
+Si `pip check` ou l’installation affiche des messages du type :
+
+```
+gruut 2.2.3 has requirement numpy<2.0.0,>=1.19.0, but you have numpy 2.2.6.
+tts 0.22.0 has requirement numpy==1.22.0; python_version <= "3.10", but you have numpy 2.2.6.
+tts 0.22.0 has requirement pandas<2.0,>=1.4, but you have pandas 2.3.3.
+```
+
+alignez les versions pour respecter les contraintes de gruut/TTS (et éviter de casser les autres dépendances) :
+
+1. Dans l’environnement actuel, repassez sur des versions compatibles puis vérifiez avec `pip check` :
+
+```bash
+pip install --upgrade "numpy==1.22.0" "pandas>=1.4,<2.0" "tts==0.22.0" "gruut==2.2.3"
+pip check
+```
+
+2. Si d’autres paquets nécessitent numpy ≥2.x, créez un environnement dédié pour le pipeline (Python 3.10 recommandé), installez
+   d’abord les dépendances de base (ffmpeg, demucs, etc.), puis appliquez les versions compatibles ci-dessus. Exemple conda :
+
+```bash
+conda create -n anime_dub_py310 python=3.10
+conda activate anime_dub_py310
+pip install --upgrade "numpy==1.22.0" "pandas>=1.4,<2.0" "tts==0.22.0" "gruut==2.2.3"
+pip check
+```
+
+Gardez les installations critiques (torch/torchaudio/torchvision, demucs, TTS) dans le même environnement pour éviter les
+incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
+
+**Questions fréquentes :**
+
+- **Qu’est-ce que gruut ?** Bibliothèque de **génération phonémique** (tokenisation, phonétisation) utilisée par Coqui TTS ; la
+  dernière version publiée (`gruut 2.2.3`) impose `numpy < 2.0.0` et n’expose pas de build compatible avec `numpy 2.x`.
+- **Existe-t-il une version gruut compatible avec numpy 2.2.6 ?** Non à date : il faut soit **revenir à numpy 1.22.x** (ou
+  toute version <2.0) pour satisfaire `gruut`, soit isoler les besoins numpy 2.x dans **un autre environnement**.
+- **TTS compatible avec numpy/pandas récents ?** `tts 0.22.0` requiert `numpy==1.22.0` (Python ≤3.10) et `pandas<2.0`. Aucune
+  roue actuelle ne prend en charge `numpy 2.2.6` ou `pandas 2.3.x`. Conservez donc le couple `numpy 1.22.x` / `pandas <2.0`
+  pour les étapes TTS/gruut, et utilisez un environnement séparé si d’autres dépendances exigent des versions plus récentes.
+
+### Dépendances par étape et stratégies d’environnement
+
+| Étape | Bibliothèques clés | Points d’attention |
+| --- | --- | --- |
+| 01 Extraction audio | `ffmpeg` (CLI) | Disponible via le système ou conda (`conda install -c conda-forge ffmpeg`). |
+| 02 Séparation stems | `demucs` (→ `torch`, `torchaudio`), option `uvr` | Aligner `torch/torchaudio/torchvision` sur la même build CUDA (ex. cu121/cu128). Fallback CPU possible, `--demucs-require-cuda` pour forcer l’échec si le GPU n’est pas accessible. |
+| 03 Diarisation | `pyannote.audio` (→ `torch`), token HF requis | Nécessite la même pile torch que Demucs pour éviter des conflits (versions, CUDA). |
+| 04 Transcription | `faster-whisper` (→ `ctranslate2`, `tokenizers`) | Indépendant de torch, mais gourmand en RAM/GPU ; compatible avec numpy récent. |
+| 05 Traduction | `transformers`, `torch` | Même contrainte torch/CUDA que les étapes 02/03 pour mutualiser les GPU. |
+| 06 Banque de voix | `pyannote.audio`, `numpy`, `soundfile` | Hérite des contraintes torch + HF token. |
+| 07 Attribution personnages | `pyannote.audio`, `numpy`, `soundfile`, `yaml` | Même pile torch/numpy que 06. |
+| 08 Synthèse XTTS | `TTS` (Coqui), `gruut`, `numpy==1.22.x`, `pandas<2.0`, `soundfile` | **Incompatible avec numpy/pandas ≥2.x** ; à isoler si d’autres tâches requièrent numpy/pandas récents. |
+| 09 Mix audio | `ffmpeg` (CLI) | Pas de dépendance Python supplémentaire. |
+| 10 Remux | `ffmpeg` (CLI) | Idem. |
+
+**Quand utiliser plusieurs environnements ?**
+
+- **Environnement unique (simple)** : fonctionne si vous acceptez de rester sur `numpy 1.22.x` / `pandas<2.0` pour satisfaire `TTS/gruut`. Installez torch/torchaudio/torchvision CUDA, demucs, pyannote, transformers, faster-whisper et TTS dans le même env (Python 3.10) puis vérifiez avec `pip check`.
+- **Environnements séparés (recommandé si numpy/pandas 2.x sont nécessaires ailleurs)** :
+  - `anime_dub_core` : torch CUDA + demucs + pyannote + faster-whisper + transformers (libres vis-à-vis de numpy 2.x).
+  - `anime_dub_tts` : `TTS==0.22.0`, `gruut==2.2.3`, `numpy==1.22.0`, `pandas>=1.4,<2.0`, `soundfile` ; pas de dépendance torch nécessaire ici.
+
+**Exécution dans des environnements différents**
+
+1) Créez les environnements :
+
+```bash
+# Core (GPU + numpy/pandas récents possibles)
+conda create -n anime_dub_core python=3.10
+conda activate anime_dub_core
+pip install --upgrade "torch==2.8.0+cu128" "torchaudio==2.8.0+cu128" "torchvision==0.23.0+cu128" \
+  --extra-index-url https://download.pytorch.org/whl/cu128
+pip install demucs pyannote.audio faster-whisper transformers soundfile
+
+# TTS (contraintes numpy/pandas <2.0)
+conda create -n anime_dub_tts python=3.10
+conda activate anime_dub_tts
+pip install "numpy==1.22.0" "pandas>=1.4,<2.0" "tts==0.22.0" "gruut==2.2.3" soundfile
+pip check
+```
+
+2) Exécutez les étapes 01→07 et 09→10 dans `anime_dub_core` (GUI ou CLI) :
+
+```bash
+conda activate anime_dub_core
+python scripts/01_extract_audio.py --stem <episode>
+...
+python scripts/07_assign_characters.py --stem <episode>
+python scripts/09_mix_audio.py --stem <episode>
+python scripts/10_remux.py --stem <episode>
+```
+
+3) Exécutez l’étape 08 dans `anime_dub_tts` en ciblant le même projet/racine (les fichiers d’entrée/sortie restent sous `data/`) :
+
+```bash
+conda run -n anime_dub_tts \
+  ANIME_DUB_PROJECT_ROOT="<chemin_du_projet>" ANIME_DUB_CONFIG_DIR="<chemin_du_projet>/config" \
+  python scripts/08_synthesize_xtts.py --stem <episode> --verbose
+```
+
+4) Via le GUI : ouvrez le menu **Options → Configurer l'environnement TTS…**, renseignez `anime_dub_tts` (et le binaire `conda`
+si nécessaire). Le GUI lancera alors automatiquement l’étape **08 Synthèse XTTS** avec `conda run -n <env> python ...` tout en
+conservant l’environnement courant pour les autres étapes.
+
+Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
+
 
 ### CLI ou GUI ? Pourquoi conserver les deux
 

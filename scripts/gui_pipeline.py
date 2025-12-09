@@ -2,7 +2,7 @@
 Interface GUI pour orchestrer les étapes du pipeline.
 
 Fonctionnalités principales :
-- Sélectionner les étapes à exécuter et l'ordre par défaut 01→09.
+- Sélectionner les étapes à exécuter et l'ordre par défaut 01→10.
 - Choisir le niveau de pause (aucune, après chaque fichier, répertoire ou étape).
 - Modifier les fichiers de configuration (chemins de données) directement depuis l'interface.
 - Enregistrer / charger l'état complet : thème, chemins, options, étape + fichier en cours.
@@ -58,14 +58,15 @@ class WorkflowStep:
 
 STEPS: list[WorkflowStep] = [
     WorkflowStep("01", "Extraction audio", "01_extract_audio.py", "episodes_raw_dir", "*.mkv", "ffmpeg → wav", supports_verbose=True),
-    WorkflowStep("02", "Diarisation", "02_diarize.py", "audio_raw_dir", "*_mono16k.wav", "pyannote 3.1"),
-    WorkflowStep("03", "Transcription Whisper", "03_whisper_transcribe.py", "audio_raw_dir", "*_mono16k.wav", "Whisper large-v3"),
-    WorkflowStep("04", "Traduction NLLB", "04_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB 600M"),
-    WorkflowStep("05", "Banque de voix", "05_build_speaker_bank.py", None, None, "Initialisation/embeddings"),
-    WorkflowStep("06", "Attribution personnages", "06_assign_characters.py", "whisper_json_fr_dir", "*_fr.json", "Matching embeddings"),
-    WorkflowStep("07", "Synthèse XTTS", "07_synthesize_xtts.py", "segments_dir", "*_segments.json", "XTTS-v2"),
-    WorkflowStep("08", "Mix audio", "08_mix_audio.py", "dub_audio_dir", "*_fr_voices.wav", "amix ffmpeg"),
-    WorkflowStep("09", "Remux vidéo", "09_remux.py", "dub_audio_dir", "*_fr_full.wav", "Remux MKV"),
+    WorkflowStep("02", "Séparation stems", "02_separate_stems.py", "audio_raw_dir", "*_full.wav", "Demucs/UVR", supports_verbose=True),
+    WorkflowStep("03", "Diarisation", "03_diarize.py", "audio_raw_dir", "*_mono16k.wav", "pyannote 3.1"),
+    WorkflowStep("04", "Transcription Whisper", "04_whisper_transcribe.py", "audio_raw_dir", "*_mono16k.wav", "Whisper large-v3"),
+    WorkflowStep("05", "Traduction NLLB", "05_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB 600M"),
+    WorkflowStep("06", "Banque de voix", "06_build_speaker_bank.py", None, None, "Initialisation/embeddings"),
+    WorkflowStep("07", "Attribution personnages", "07_assign_characters.py", "whisper_json_fr_dir", "*_fr.json", "Matching embeddings"),
+    WorkflowStep("08", "Synthèse XTTS", "08_synthesize_xtts.py", "segments_dir", "*_segments.json", "XTTS-v2"),
+    WorkflowStep("09", "Mix audio", "09_mix_audio.py", "dub_audio_dir", "*_fr_voices.wav", "amix ffmpeg"),
+    WorkflowStep("10", "Remux vidéo", "10_remux.py", "dub_audio_dir", "*_fr_full.wav", "Remux MKV"),
 ]
 
 
@@ -171,6 +172,8 @@ class WorkflowState:
         self.single_stem = None
         self.selected_units: list[str] = []
         self.verbose = False
+        self.tts_env_name: str | None = None
+        self.conda_executable: str = "conda"
 
     def load(self, path: Path = STATE_PATH) -> None:
         if not path.exists():
@@ -187,6 +190,8 @@ class WorkflowState:
         self.single_stem = data.get("single_stem")
         self.selected_units = data.get("selected_units", self.selected_units)
         self.verbose = bool(data.get("verbose", self.verbose))
+        self.tts_env_name = data.get("tts_env_name", self.tts_env_name)
+        self.conda_executable = data.get("conda_executable", self.conda_executable)
 
     def save(self, path: Path = STATE_PATH) -> None:
         payload = {
@@ -201,6 +206,8 @@ class WorkflowState:
             "single_stem": self.single_stem,
             "selected_units": self.selected_units,
             "verbose": self.verbose,
+            "tts_env_name": self.tts_env_name,
+            "conda_executable": self.conda_executable,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -402,7 +409,13 @@ class WorkflowRunner:
 
     def _run_script(self, step: WorkflowStep, units: list[str]):
         script_path = PROJECT_ROOT / "scripts" / step.script
-        cmd = ["python", str(script_path)]
+        if step.step_id == "08" and self.state.tts_env_name:
+            cmd = [self.state.conda_executable, "run", "-n", self.state.tts_env_name, "python", str(script_path)]
+            self.log(
+                f"[info] Étape 08 (XTTS) exécutée via {self.state.conda_executable} run -n {self.state.tts_env_name}"
+            )
+        else:
+            cmd = ["python", str(script_path)]
         stems = [u for u in units if u != "_all_"]
         for stem in stems:
             cmd.extend(["--stem", stem])
@@ -420,12 +433,24 @@ class WorkflowRunner:
             self.log(f"[verbose] Commande : {' '.join(cmd)}")
             self.log(f"[verbose] Environnement : {env_summary}")
         try:
-            completed = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
-            if completed.stdout:
-                self.log(completed.stdout.strip())
-            if completed.stderr:
-                self.log(completed.stderr.strip())
-        except subprocess.CalledProcessError as exc:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                bufsize=1,
+                universal_newlines=True,
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                self.log(line.rstrip())
+            return_code = process.wait()
+            if return_code != 0:
+                self.log(f"Erreur lors de {step.label} : exit code {return_code}")
+                self.pause_event.set()
+                self.state.save()
+        except OSError as exc:
             self.log(f"Erreur lors de {step.label} : {exc}")
             self.pause_event.set()
             self.state.save()
@@ -469,6 +494,7 @@ class PipelineGUI:
         self.selected_units: list[str] = list(self.state.selected_units)
         self.available_stems: list[str] = []
         self.verbose_var = tk.BooleanVar(value=self.state.verbose)
+        self.tts_env_label: ttk.Label | None = None
 
         self._build_menu()
         self._build_layout()
@@ -519,6 +545,7 @@ class PipelineGUI:
             variable=self.verbose_var,
             command=self._toggle_verbose,
         )
+        self.options_menu.add_command(label="Configurer l'environnement TTS…", command=self._configure_tts_env)
         self.options_menu.add_separator()
         pause_menu = tk.Menu(self.options_menu, tearoff=0)
         pause_menu.add_command(label="Aucune pause", command=lambda: self._set_pause("none"))
@@ -605,6 +632,11 @@ class PipelineGUI:
         self.pause_var = tk.StringVar(value=self.state.pause_mode)
         pause_combo = ttk.Combobox(controls, textvariable=self.pause_var, values=["none", "file", "directory", "step"], width=12)
         pause_combo.pack(side=tk.LEFT)
+
+        ttk.Label(controls, text="Env. TTS :").pack(side=tk.LEFT, padx=(20, 4))
+        self.tts_env_label = ttk.Label(controls, text=self._tts_env_summary())
+        self.tts_env_label.pack(side=tk.LEFT)
+        ttk.Button(controls, text="Modifier", command=self._configure_tts_env, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
 
         # Log
         log_frame = ttk.LabelFrame(container, text="Logs", style="Card.TLabelframe")
@@ -849,6 +881,38 @@ class PipelineGUI:
         if path != STATE_PATH:
             self.state.save(STATE_PATH)
         return path
+
+    def _configure_tts_env(self):
+        env_name = simpledialog.askstring(
+            "Environnement TTS",
+            "Nom de l'environnement conda pour l'étape 08 (laisser vide pour utiliser l'environnement courant) :",
+            initialvalue=self.state.tts_env_name or "anime_dub_tts",
+            parent=self.root,
+        )
+        if env_name is not None:
+            self.state.tts_env_name = env_name.strip() or None
+        conda_exec = simpledialog.askstring(
+            "Executable conda",
+            "Commande ou chemin vers conda/mamba (utilisé avec conda run) :",
+            initialvalue=self.state.conda_executable or "conda",
+            parent=self.root,
+        )
+        if conda_exec is not None:
+            self.state.conda_executable = conda_exec.strip() or "conda"
+        self._save_state()
+        if self.tts_env_label:
+            self.tts_env_label.configure(text=self._tts_env_summary())
+        if self.state.tts_env_name:
+            self.log(
+                f"Étape 08 (XTTS) sera lancée via '{self.state.conda_executable} run -n {self.state.tts_env_name}'."
+            )
+        else:
+            self.log("Étape 08 (XTTS) utilisera l'environnement courant.")
+
+    def _tts_env_summary(self) -> str:
+        if self.state.tts_env_name:
+            return f"conda run -n {self.state.tts_env_name}"
+        return "environnement courant"
 
     # --- Gestion de projet ---
     def create_project(self):

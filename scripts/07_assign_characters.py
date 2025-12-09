@@ -1,4 +1,4 @@
-# scripts/06_assign_characters.py
+# scripts/07_assign_characters.py
 import argparse
 import json
 import logging

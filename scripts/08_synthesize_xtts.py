@@ -1,4 +1,4 @@
-# scripts/07_synthesize_xtts.py
+# scripts/08_synthesize_xtts.py
 import argparse
 import json
 import logging
