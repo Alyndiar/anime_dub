@@ -214,6 +214,13 @@ conda env create -f config/diarization_env.yml
 conda activate anime-dub-diar
 ```
 
+> ⚠️ Si la résolution échoue avec un message `cuda-nvtx >=12.1,<12.2` introuvable, vérifiez que le canal `nvidia` est bien
+> activé (il est déjà listé dans `config/diarization_env.yml`). Vous pouvez l’ajouter globalement au besoin :
+>
+> ```bash
+> conda config --add channels nvidia
+> ```
+
 Cet environnement installe un couple stable PyTorch 2.2.2 (CUDA 12.1) / torchcodec 0.2.0 / ffmpeg 6, testé avec pyannote 3.1.
 Si `torchcodec` reste introuvable, réinstallez-le sans ses dépendances (pour ne pas écraser PyTorch) :
 
