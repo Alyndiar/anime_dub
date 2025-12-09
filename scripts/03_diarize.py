@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Iterable
 
+import torch
 from pyannote.audio import Pipeline
 
 from utils_config import ensure_directories, get_data_path
@@ -40,6 +41,12 @@ def diarize_all(
         )
         raise SystemExit(1)
     logger.info("Initialisation du pipeline pyannote (HF_TOKEN présent)")
+
+    # PyTorch >= 2.6 charge les checkpoints en mode "weights_only=True" par défaut.
+    # Certains checkpoints pyannote utilisent le type torch.torch_version.TorchVersion
+    # dans leur state dict. On l'ajoute donc à la liste des globals autorisés pour
+    # éviter l'erreur "Unsupported global ... TorchVersion" lors du chargement.
+    torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
 
     pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
