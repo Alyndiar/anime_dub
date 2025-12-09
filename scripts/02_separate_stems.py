@@ -30,6 +30,52 @@ def log(message: str, logger: logging.Logger, level: int = logging.DEBUG) -> Non
     logger.log(level, message)
 
 
+def resolve_demucs_device(requested: str, logger: logging.Logger, verbose: bool) -> str:
+    """Détermine l'appareil Demucs en expliquant les raisons du choix."""
+
+    cuda_build = torch.version.cuda
+    cuda_available = torch.cuda.is_available()
+    torch_version = torch.__version__
+
+    if verbose:
+        log(
+            f"PyTorch {torch_version} (build CUDA: {cuda_build or 'aucun'}) – torch.cuda.is_available={cuda_available}",
+            logger,
+        )
+
+    if requested == "auto":
+        if cuda_available:
+            try:
+                gpu_name = torch.cuda.get_device_name(torch.cuda.current_device())
+            except Exception:  # noqa: BLE001
+                gpu_name = "GPU CUDA détecté"
+            log(f"CUDA détecté ({gpu_name}), utilisation du GPU pour Demucs.", logger, level=logging.INFO)
+            return "cuda"
+
+        if cuda_build is None:
+            log(
+                "PyTorch installé sans support CUDA (torch.version.cuda=None) : installation GPU requise pour utiliser la RTX 4080.",
+                logger,
+                level=logging.WARNING,
+            )
+        else:
+            log(
+                "CUDA détecté dans la build mais indisponible (drivers / runtime manquants ?), bascule sur CPU.",
+                logger,
+                level=logging.WARNING,
+            )
+        return "cpu"
+
+    if requested.startswith("cuda") and not cuda_available:
+        fallback_reason = (
+            "PyTorch sans CUDA" if cuda_build is None else "CUDA indisponible pour l'instant"
+        )
+        log(f"{requested} demandé mais {fallback_reason}, bascule sur CPU.", logger, level=logging.WARNING)
+        return "cpu"
+
+    return requested
+
+
 def run(cmd: list[str], logger: logging.Logger, verbose: bool) -> None:
     """Exécute une commande système en journalisant la ligne complète."""
 
@@ -73,15 +119,7 @@ def separate_with_demucs(
     demucs_out = workspace / "demucs"
     demucs_out.mkdir(parents=True, exist_ok=True)
 
-    if device == "auto":
-        chosen_device = "cuda" if torch.cuda.is_available() else "cpu"
-        if not torch.cuda.is_available():
-            log("CUDA indisponible, utilisation du CPU pour Demucs.", logger, level=logging.WARNING)
-    elif device.startswith("cuda") and not torch.cuda.is_available():
-        log("CUDA demandé mais PyTorch n'a pas été compilé avec CUDA, bascule sur CPU.", logger, level=logging.WARNING)
-        chosen_device = "cpu"
-    else:
-        chosen_device = device
+    chosen_device = resolve_demucs_device(device, logger, verbose)
     log(f"Appareil Demucs sélectionné : {chosen_device}", logger, level=logging.INFO if not verbose else logging.DEBUG)
 
     cmd = [

@@ -113,7 +113,7 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 - sauvegarde et rechargement de l'état (chemins, thème sombre/clair, étape et fichier en cours) dans `config/gui_state.json` ou via « Fichier → Enregistrer sous… » ;
 - lors de l'exécution d'une étape, le GUI exporte les variables d'environnement `ANIME_DUB_PROJECT_ROOT` et `ANIME_DUB_CONFIG_DIR` pour que les helpers (`get_data_path`, `ensure_directories`, etc.) résolvent correctement les chemins du projet sélectionné ;
 - option « Verbose » dans le menu Options ou la barre de commandes pour tracer en détail les appels des scripts (commande, environnement `ANIME_DUB_VERBOSE`, paramètre `--verbose` lorsque disponible) ;
-- les logs sont affichés dans la fenêtre et simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
+- les logs s'affichent en continu pendant l'exécution (stdout/stderr streaming) et sont simultanément écrits dans `<base_du_projet>/logs/gui_pipeline.log` pour conserver une trace des commandes et sorties ;
 - reprise exacte d'une exécution interrompue grâce aux options `--stem` ajoutées sur les scripts (par exemple `python scripts/04_whisper_transcribe.py --stem episode_001`).
 
 ### Étape 02 : séparation voix / instrumental
@@ -125,6 +125,21 @@ Une interface GUI est disponible via `python scripts/gui_pipeline.py` ou directe
 ```bash
 pip install --upgrade demucs  # installe également PyTorch/torchaudio
 python scripts/02_separate_stems.py --tool demucs --demucs-model htdemucs
+```
+
+- Pour exploiter le GPU (ex. RTX 4080), installez une build CUDA de PyTorch (sinon Demucs repassera en CPU et journalisera `torch.version.cuda=None`). Exemple pour CUDA 12.1 :
+
+```bash
+pip install --upgrade "torch==2.5.1+cu121" "torchaudio==2.5.1+cu121" --index-url https://download.pytorch.org/whl/cu121
+```
+
+Vérifiez ensuite :
+
+```bash
+python - <<'PY'
+import torch
+print(torch.__version__, torch.version.cuda, torch.cuda.is_available())
+PY
 ```
 
 - Alternative UVR : si vous disposez d'une commande UVR (CLI portable ou pip) acceptant les arguments d'entrée/sortie, passez-la via `--tool uvr` et le template `--uvr-command` (placeholders `{input}`, `{output_dir}`, `{model}`), par exemple :

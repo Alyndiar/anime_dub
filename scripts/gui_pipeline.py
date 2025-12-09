@@ -421,12 +421,24 @@ class WorkflowRunner:
             self.log(f"[verbose] Commande : {' '.join(cmd)}")
             self.log(f"[verbose] Environnement : {env_summary}")
         try:
-            completed = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
-            if completed.stdout:
-                self.log(completed.stdout.strip())
-            if completed.stderr:
-                self.log(completed.stderr.strip())
-        except subprocess.CalledProcessError as exc:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                bufsize=1,
+                universal_newlines=True,
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                self.log(line.rstrip())
+            return_code = process.wait()
+            if return_code != 0:
+                self.log(f"Erreur lors de {step.label} : exit code {return_code}")
+                self.pause_event.set()
+                self.state.save()
+        except OSError as exc:
             self.log(f"Erreur lors de {step.label} : {exc}")
             self.pause_event.set()
             self.state.save()
