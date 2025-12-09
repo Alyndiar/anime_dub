@@ -30,16 +30,25 @@ def log(message: str, logger: logging.Logger, level: int = logging.DEBUG) -> Non
     logger.log(level, message)
 
 
-def resolve_demucs_device(requested: str, logger: logging.Logger, verbose: bool) -> str:
-    """Détermine l'appareil Demucs en expliquant les raisons du choix."""
+def resolve_demucs_device(requested: str, logger: logging.Logger, verbose: bool, require_cuda: bool) -> str:
+    """Détermine l'appareil Demucs en expliquant les raisons du choix.
+
+    Si ``require_cuda`` est actif et que CUDA n'est pas utilisable, une
+    ``RuntimeError`` est levée afin d'éviter un fallback silencieux.
+    """
 
     cuda_build = torch.version.cuda
     cuda_available = torch.cuda.is_available()
+    cuda_built = torch.backends.cuda.is_built()
     torch_version = torch.__version__
 
     if verbose:
         log(
-            f"PyTorch {torch_version} (build CUDA: {cuda_build or 'aucun'}) – torch.cuda.is_available={cuda_available}",
+            (
+                "PyTorch "
+                f"{torch_version} (build CUDA: {cuda_build or 'aucun'}, torch.backends.cuda.is_built={cuda_built}) "
+                f"– torch.cuda.is_available={cuda_available}"
+            ),
             logger,
         )
 
@@ -64,6 +73,15 @@ def resolve_demucs_device(requested: str, logger: logging.Logger, verbose: bool)
                 logger,
                 level=logging.WARNING,
             )
+            log(
+                "Vérifiez le driver NVIDIA, le toolkit CUDA et que demucs s'exécute dans l'environnement où torch==torchvision"
+                " ont été installés avec le suffixe +cuXXX.",
+                logger,
+                level=logging.WARNING,
+            )
+
+        if require_cuda:
+            raise RuntimeError("CUDA requis (--demucs-require-cuda) mais indisponible")
         return "cpu"
 
     if requested.startswith("cuda") and not cuda_available:
@@ -71,6 +89,8 @@ def resolve_demucs_device(requested: str, logger: logging.Logger, verbose: bool)
             "PyTorch sans CUDA" if cuda_build is None else "CUDA indisponible pour l'instant"
         )
         log(f"{requested} demandé mais {fallback_reason}, bascule sur CPU.", logger, level=logging.WARNING)
+        if require_cuda:
+            raise RuntimeError("CUDA requis (--demucs-require-cuda) mais indisponible")
         return "cpu"
 
     return requested
@@ -111,6 +131,7 @@ def separate_with_demucs(
     workspace: Path,
     model: str,
     device: str,
+    require_cuda: bool,
     logger: logging.Logger,
     verbose: bool,
 ) -> Tuple[Path, Path]:
@@ -119,7 +140,7 @@ def separate_with_demucs(
     demucs_out = workspace / "demucs"
     demucs_out.mkdir(parents=True, exist_ok=True)
 
-    chosen_device = resolve_demucs_device(device, logger, verbose)
+    chosen_device = resolve_demucs_device(device, logger, verbose, require_cuda)
     log(f"Appareil Demucs sélectionné : {chosen_device}", logger, level=logging.INFO if not verbose else logging.DEBUG)
 
     cmd = [
@@ -187,6 +208,7 @@ def separate_all_stems(
     tool: str,
     demucs_model: str,
     demucs_device: str,
+    demucs_require_cuda: bool,
     uvr_command: str | None,
     uvr_model: str | None,
     uvr_vocals_name: str,
@@ -217,7 +239,15 @@ def separate_all_stems(
         log(f"Séparation de {stem} via {tool}", logger, level=logging.INFO)
         try:
             if tool == "demucs":
-                vocals_src, instr_src = separate_with_demucs(audio_path, workspace, demucs_model, demucs_device, logger, verbose)
+                vocals_src, instr_src = separate_with_demucs(
+                    audio_path,
+                    workspace,
+                    demucs_model,
+                    demucs_device,
+                    demucs_require_cuda,
+                    logger,
+                    verbose,
+                )
             else:
                 vocals_src, instr_src = separate_with_uvr_command(
                     audio_path,
@@ -263,6 +293,11 @@ def parse_args() -> argparse.Namespace:
         help="Appareil Demucs (auto, cuda ou cpu). 'auto' choisit cuda si disponible, sinon cpu.",
     )
     parser.add_argument(
+        "--demucs-require-cuda",
+        action="store_true",
+        help="Échoue si CUDA n'est pas utilisable (utile pour diagnostiquer l'environnement GPU).",
+    )
+    parser.add_argument(
         "--uvr-command",
         help="Commande UVR complète à exécuter (template avec {input}, {output_dir}, {model})",
     )
@@ -299,6 +334,7 @@ def main() -> None:
         tool=args.tool,
         demucs_model=args.demucs_model,
         demucs_device=args.demucs_device,
+        demucs_require_cuda=args.demucs_require_cuda,
         uvr_command=args.uvr_command,
         uvr_model=args.uvr_model,
         uvr_vocals_name=args.uvr_vocals_name,

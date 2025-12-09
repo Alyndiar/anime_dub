@@ -139,8 +139,18 @@ Vérifiez ensuite :
 python - <<'PY'
 import torch
 print(torch.__version__, torch.version.cuda, torch.cuda.is_available())
+if torch.cuda.is_available():
+    print(torch.cuda.get_device_name(torch.cuda.current_device()))
 PY
 ```
+
+- Si vous utilisez déjà une build GPU (ex. `torch==2.8.0+cu128`) mais que Demucs bascule en CPU, forcez la vérification via :
+
+```bash
+python scripts/02_separate_stems.py --demucs-device cuda --demucs-require-cuda --stem mon_episode --verbose
+```
+
+Cette commande lèvera une erreur explicite si CUDA est indisponible dans l'environnement du script. Vérifiez alors que le driver NVIDIA est installé et que `demucs` est bien exécuté dans la même venv/conda que votre PyTorch CUDA.
 
 - Alternative UVR : si vous disposez d'une commande UVR (CLI portable ou pip) acceptant les arguments d'entrée/sortie, passez-la via `--tool uvr` et le template `--uvr-command` (placeholders `{input}`, `{output_dir}`, `{model}`), par exemple :
 
@@ -155,7 +165,8 @@ python scripts/02_separate_stems.py \
 
 Dans les deux cas, la commande accepte `--stem` pour cibler un épisode et `--overwrite` pour régénérer des stems déjà présents.
 `--demucs-device` vaut `auto` par défaut : si CUDA est indisponible (PyTorch compilé CPU), le script bascule automatiquement sur
-le CPU pour éviter un échec de séparation.
+le CPU pour éviter un échec de séparation ; utilisez `--demucs-require-cuda` pour forcer un échec explicite lorsque le GPU n'est
+pas utilisable.
 
 ### CLI ou GUI ? Pourquoi conserver les deux
 
