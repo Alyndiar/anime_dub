@@ -4,10 +4,6 @@ import logging
 import os
 from typing import Iterable
 
-import torch
-from pyannote.audio import Pipeline
-from pyannote.audio.core.task import Specifications
-
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
 
@@ -29,6 +25,31 @@ def diarize_all(
     logger: logging.Logger | None = None,
 ) -> None:
     logger = init_logger("diarize", verbose, logger)
+
+    try:
+        import torch
+    except OSError as exc:
+        logger.error(
+            "PyTorch ne peut pas se charger : %s",
+            exc,
+        )
+        logger.info(
+            "Cette erreur (fbgemm.dll ou dépendance manquante) survient souvent quand"
+            " les runtimes Visual C++ 2015-2022 sont absents ou quand la version"
+            " PyTorch/CUDA ne correspond pas au GPU/driver."
+        )
+        logger.info(
+            "Actions suggérées :\n"
+            "  1) Installer le runtime Microsoft Visual C++ 2015-2022 (x64).\n"
+            "  2) Vérifier que le driver NVIDIA est à jour et que PyTorch correspond"
+            " à la version CUDA de l'environnement (ex. pytorch-cuda=12.1).\n"
+            "  3) Réinstaller PyTorch dans l'env dédié : conda install pytorch"
+            " pytorch-cuda=12.1 -c pytorch -c nvidia -c conda-forge."
+        )
+        raise SystemExit(1) from exc
+
+    from pyannote.audio import Pipeline
+    from pyannote.audio.core.task import Specifications
 
     paths = ensure_directories(["diarization_dir"])
     audio_raw = get_data_path("audio_raw_dir")

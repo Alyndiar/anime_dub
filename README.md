@@ -248,6 +248,17 @@ Lancez ensuite la diarisation sur un épisode :
 python -u scripts/03_diarize.py --stem "Soul land episode 01 vostfr"
 ```
 
+Si PyTorch échoue au chargement avec un message `fbgemm.dll` ou `OSError: %1 n’est pas une application Win32 valide`, vérifiez :
+
+- l’installation du **Microsoft Visual C++ Redistributable 2015-2022 (x64)** ;
+- la cohérence entre la version CUDA de PyTorch et le driver GPU (par exemple `pytorch-cuda=12.1` avec un driver ≥ 531) ;
+- au besoin, réinstallez PyTorch dans l’environnement diarisation :
+
+```bash
+conda activate anime_dub_diar
+conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia -c conda-forge
+```
+
 **Questions fréquentes :**
 
 - **Qu’est-ce que gruut ?** Bibliothèque de **génération phonémique** (tokenisation, phonétisation) utilisée par Coqui TTS ; la
@@ -324,6 +335,7 @@ conda run -n anime_dub_tts \
      - **Étape 03 – Diarisation** (préremplie avec `anime_dub_diar`).
      - **Étape 08 – XTTS** (préremplie avec `anime_dub_tts`).
    - choisissez les environnements dans les listes (ou laissez vide pour utiliser l’environnement courant), puis cliquez sur **Enregistrer**. Le GUI utilisera alors automatiquement `conda run -n <env> python -u ...` pour l’étape correspondante, l’environnement par défaut étant appliqué aux autres étapes.
+   - l’option `python -u` et `PYTHONUNBUFFERED=1` sont appliquées par le GUI pour capter les logs en **temps réel** dans la fenêtre de sortie (utile pour pyannote/XTTS).
    - un bouton radio permet de choisir entre `conda` et `mamba` (option grisée si la commande n’est pas disponible). En cas d’erreur « Impossible de lister les environnements conda », vérifiez que la commande choisie est dans le `PATH` puis rafraîchissez.
 
 Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
