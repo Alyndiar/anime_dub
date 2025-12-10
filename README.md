@@ -319,8 +319,11 @@ conda run -n anime_dub_tts \
 ```
 
 4) Via le GUI :
-   - ouvrez **Options → Configurer l'environnement Diarisation…** pour laisser `anime_dub_diar` (pré-rempli) ou choisir un autre nom ; le bouton « Env. diarisation » affichera `conda run -n <env>` et l’étape **03 Diarisation** sera lancée automatiquement avec cet environnement.
-   - ouvrez **Options → Configurer l'environnement TTS…** et renseignez `anime_dub_tts` (et le binaire `conda` si nécessaire). Le GUI lancera alors automatiquement l’étape **08 Synthèse XTTS** avec `conda run -n <env> python ...` tout en conservant l’environnement courant pour les autres étapes.
+   - ouvrez **Options → Configurer les environnements…**. La fenêtre affiche des listes déroulantes alimentées par `conda env list --json` :
+     - **Environnement par défaut** (prérempli avec `anime_dub`) appliqué à toutes les étapes sans override.
+     - **Étape 03 – Diarisation** (préremplie avec `anime_dub_diar`).
+     - **Étape 08 – XTTS** (préremplie avec `anime_dub_tts`).
+   - choisissez les environnements dans les listes (ou laissez vide pour utiliser l’environnement courant), saisissez le binaire `conda`/`mamba` si besoin, puis cliquez sur **Enregistrer**. Le GUI utilisera alors automatiquement `conda run -n <env> python -u ...` pour l’étape correspondante, l’environnement par défaut étant appliqué aux autres étapes.
 
 Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
 
