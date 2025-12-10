@@ -1,4 +1,4 @@
-name: anime-dub-diar
+name: anime_dub_diar
 channels:
   - nvidia           # requis pour pytorch-cuda et ses dépendances (cuda-nvtx)
   - pytorch

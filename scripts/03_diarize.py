@@ -50,13 +50,13 @@ def diarize_all(
     if diar_env and "diar" not in diar_env:
         logger.warning(
             "Environnement actuel (%s) différent de l'environnement dédié diarisation."
-            " Utilise de préférence 'anime-dub-diar' défini dans config/diarization_env.yml",
+            " Utilise de préférence 'anime_dub_diar' défini dans config/diarization_env.yml",
             diar_env,
         )
     elif not diar_env:
         logger.info(
             "Aucun environnement virtuel détecté. Pour éviter les conflits de dépendances,"
-            " crée et active l'environnement conda 'anime-dub-diar' (config/diarization_env.yml)."
+            " crée et active l'environnement conda 'anime_dub_diar' (config/diarization_env.yml)."
         )
 
     # PyTorch >= 2.6 charge les checkpoints en mode "weights_only=True" par défaut.

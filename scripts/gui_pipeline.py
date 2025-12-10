@@ -172,6 +172,7 @@ class WorkflowState:
         self.single_stem = None
         self.selected_units: list[str] = []
         self.verbose = False
+        self.diar_env_name: str | None = "anime_dub_diar"
         self.tts_env_name: str | None = None
         self.conda_executable: str = "conda"
 
@@ -190,6 +191,7 @@ class WorkflowState:
         self.single_stem = data.get("single_stem")
         self.selected_units = data.get("selected_units", self.selected_units)
         self.verbose = bool(data.get("verbose", self.verbose))
+        self.diar_env_name = data.get("diar_env_name", self.diar_env_name)
         self.tts_env_name = data.get("tts_env_name", self.tts_env_name)
         self.conda_executable = data.get("conda_executable", self.conda_executable)
 
@@ -206,6 +208,7 @@ class WorkflowState:
             "single_stem": self.single_stem,
             "selected_units": self.selected_units,
             "verbose": self.verbose,
+            "diar_env_name": self.diar_env_name,
             "tts_env_name": self.tts_env_name,
             "conda_executable": self.conda_executable,
         }
@@ -409,7 +412,20 @@ class WorkflowRunner:
 
     def _run_script(self, step: WorkflowStep, units: list[str]):
         script_path = PROJECT_ROOT / "scripts" / step.script
-        if step.step_id == "08" and self.state.tts_env_name:
+        if step.step_id == "03" and self.state.diar_env_name:
+            cmd = [
+                self.state.conda_executable,
+                "run",
+                "-n",
+                self.state.diar_env_name,
+                "python",
+                "-u",
+                str(script_path),
+            ]
+            self.log(
+                f"[info] Étape 03 (Diarisation) exécutée via {self.state.conda_executable} run -n {self.state.diar_env_name}"
+            )
+        elif step.step_id == "08" and self.state.tts_env_name:
             cmd = [
                 self.state.conda_executable,
                 "run",
@@ -503,6 +519,7 @@ class PipelineGUI:
         self.selected_units: list[str] = list(self.state.selected_units)
         self.available_stems: list[str] = []
         self.verbose_var = tk.BooleanVar(value=self.state.verbose)
+        self.diar_env_label: ttk.Label | None = None
         self.tts_env_label: ttk.Label | None = None
 
         self._build_menu()
@@ -553,6 +570,10 @@ class PipelineGUI:
             offvalue=False,
             variable=self.verbose_var,
             command=self._toggle_verbose,
+        )
+        self.options_menu.add_command(
+            label="Configurer l'environnement Diarisation…",
+            command=self._configure_diar_env,
         )
         self.options_menu.add_command(label="Configurer l'environnement TTS…", command=self._configure_tts_env)
         self.options_menu.add_separator()
@@ -641,6 +662,11 @@ class PipelineGUI:
         self.pause_var = tk.StringVar(value=self.state.pause_mode)
         pause_combo = ttk.Combobox(controls, textvariable=self.pause_var, values=["none", "file", "directory", "step"], width=12)
         pause_combo.pack(side=tk.LEFT)
+
+        ttk.Label(controls, text="Env. diarisation :").pack(side=tk.LEFT, padx=(20, 4))
+        self.diar_env_label = ttk.Label(controls, text=self._diar_env_summary())
+        self.diar_env_label.pack(side=tk.LEFT)
+        ttk.Button(controls, text="Modifier", command=self._configure_diar_env, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
 
         ttk.Label(controls, text="Env. TTS :").pack(side=tk.LEFT, padx=(20, 4))
         self.tts_env_label = ttk.Label(controls, text=self._tts_env_summary())
@@ -891,6 +917,33 @@ class PipelineGUI:
             self.state.save(STATE_PATH)
         return path
 
+    def _configure_diar_env(self):
+        env_name = simpledialog.askstring(
+            "Environnement Diarisation",
+            "Nom de l'environnement conda pour l'étape 03 (laisser vide pour utiliser l'environnement courant) :",
+            initialvalue=self.state.diar_env_name or "anime_dub_diar",
+            parent=self.root,
+        )
+        if env_name is not None:
+            self.state.diar_env_name = env_name.strip() or None
+        conda_exec = simpledialog.askstring(
+            "Executable conda",
+            "Commande ou chemin vers conda/mamba (utilisé avec conda run) :",
+            initialvalue=self.state.conda_executable or "conda",
+            parent=self.root,
+        )
+        if conda_exec is not None:
+            self.state.conda_executable = conda_exec.strip() or "conda"
+        self._save_state()
+        if self.diar_env_label:
+            self.diar_env_label.configure(text=self._diar_env_summary())
+        if self.state.diar_env_name:
+            self.log(
+                f"Étape 03 (Diarisation) sera lancée via '{self.state.conda_executable} run -n {self.state.diar_env_name}'."
+            )
+        else:
+            self.log("Étape 03 (Diarisation) utilisera l'environnement courant.")
+
     def _configure_tts_env(self):
         env_name = simpledialog.askstring(
             "Environnement TTS",
@@ -921,6 +974,11 @@ class PipelineGUI:
     def _tts_env_summary(self) -> str:
         if self.state.tts_env_name:
             return f"conda run -n {self.state.tts_env_name}"
+        return "environnement courant"
+
+    def _diar_env_summary(self) -> str:
+        if self.state.diar_env_name:
+            return f"conda run -n {self.state.diar_env_name}"
         return "environnement courant"
 
     # --- Gestion de projet ---

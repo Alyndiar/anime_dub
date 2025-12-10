@@ -209,7 +209,7 @@ incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 conda env create -f config/diarization_env.yml
 
 # Activation avant de lancer le GUI ou 03_diarize.py
-conda activate anime-dub-diar
+conda activate anime_dub_diar
 ```
 
 > ⚠️ Si la résolution échoue avec un message `cuda-nvtx >=12.1,<12.2` introuvable, vérifiez que le canal `nvidia` est bien activé (il est déjà listé dans `config/diarization_env.yml`). Vous pouvez l’ajouter globalement au besoin :
@@ -318,9 +318,9 @@ conda run -n anime_dub_tts \
   python scripts/08_synthesize_xtts.py --stem <episode> --verbose
 ```
 
-4) Via le GUI : ouvrez le menu **Options → Configurer l'environnement TTS…**, renseignez `anime_dub_tts` (et le binaire `conda`
-si nécessaire). Le GUI lancera alors automatiquement l’étape **08 Synthèse XTTS** avec `conda run -n <env> python ...` tout en
-conservant l’environnement courant pour les autres étapes.
+4) Via le GUI :
+   - ouvrez **Options → Configurer l'environnement Diarisation…** pour laisser `anime_dub_diar` (pré-rempli) ou choisir un autre nom ; le bouton « Env. diarisation » affichera `conda run -n <env>` et l’étape **03 Diarisation** sera lancée automatiquement avec cet environnement.
+   - ouvrez **Options → Configurer l'environnement TTS…** et renseignez `anime_dub_tts` (et le binaire `conda` si nécessaire). Le GUI lancera alors automatiquement l’étape **08 Synthèse XTTS** avec `conda run -n <env> python ...` tout en conservant l’environnement courant pour les autres étapes.
 
 Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
 
