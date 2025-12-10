@@ -668,6 +668,7 @@ class PipelineGUI:
         log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         self.log_widget = tk.Text(log_frame, height=15, wrap="word")
         self.log_widget.pack(fill=tk.BOTH, expand=True)
+        self.env_list_warning_shown = False
 
     def log(self, message: str):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -721,6 +722,16 @@ class PipelineGUI:
             envs = data.get("envs", [])
             names = sorted({Path(path).name for path in envs})
             return names
+        except FileNotFoundError as exc:  # pragma: no cover - dépend du système de l'utilisateur
+            if not self.env_list_warning_shown:
+                self.log(
+                    "[warn] Impossible de lister les environnements conda (exécutable introuvable). "
+                    "Ouvre la fenêtre ‘Configurer les environnements…’ pour sélectionner le binaire conda/mamba."
+                )
+                self.env_list_warning_shown = True
+            else:
+                self.log(f"[warn] Impossible de lister les environnements conda ({exc})")
+            return []
         except Exception as exc:  # pragma: no cover - dépend du système de l'utilisateur
             self.log(f"[warn] Impossible de lister les environnements conda ({exc})")
             return []
@@ -781,7 +792,15 @@ class PipelineGUI:
 
         ttk.Label(container, text="Exécutable conda/mamba").grid(row=len(rows) + 1, column=0, sticky="w", padx=(0, 6), pady=(10, 2))
         self.conda_var = tk.StringVar(value=self.state.conda_executable or "conda")
-        ttk.Entry(container, textvariable=self.conda_var, width=30).grid(row=len(rows) + 1, column=1, sticky="ew", pady=(10, 2))
+        entry = ttk.Entry(container, textvariable=self.conda_var, width=30)
+        entry.grid(row=len(rows) + 1, column=1, sticky="ew", pady=(10, 2))
+        ttk.Button(
+            container,
+            text="...",
+            width=4,
+            command=self._browse_conda_executable,
+            style="Accent.TButton",
+        ).grid(row=len(rows) + 1, column=2, sticky="w", padx=(4, 0), pady=(10, 2))
 
         buttons = ttk.Frame(container, style="Bg.TFrame")
         buttons.grid(row=len(rows) + 2, column=0, columnspan=3, sticky="e", pady=(10, 0))
@@ -807,6 +826,13 @@ class PipelineGUI:
         )
         if hasattr(self, "env_window") and self.env_window.winfo_exists():
             self.env_window.focus_set()
+
+    def _browse_conda_executable(self):  # pragma: no cover - interaction utilisateur
+        path = filedialog.askopenfilename(title="Choisir l'exécutable conda/mamba")
+        if path:
+            self.conda_var.set(path)
+            self.env_list_warning_shown = False
+            self._refresh_env_choices()
 
     def open_paths_window(self):
         if hasattr(self, "paths_window") and self.paths_window.winfo_exists():
