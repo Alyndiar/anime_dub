@@ -461,9 +461,9 @@ class WorkflowRunner:
             env["ANIME_DUB_VERBOSE"] = "1"
         if stems:
             env["ANIME_DUB_SELECTED_STEMS"] = json.dumps(stems, ensure_ascii=False)
+        env_summary = {k: v for k, v in env.items() if k.startswith("ANIME_DUB_")}
+        self.log(f"Exécution de {' '.join(cmd)}.")
         if self.state.verbose:
-            env_summary = {k: v for k, v in env.items() if k.startswith("ANIME_DUB_")}
-            self.log(f"[verbose] Commande : {' '.join(cmd)}")
             self.log(f"[verbose] Environnement : {env_summary}")
         try:
             process = subprocess.Popen(
@@ -721,6 +721,7 @@ class PipelineGUI:
         executable = self.state.conda_executable or self.state.conda_command or "conda"
         cmd = [executable, "env", "list", "--json"]
         try:
+            self.log(f"[verbose] Exécution de {' '.join(cmd)}")
             output = subprocess.check_output(cmd, text=True)
             data = json.loads(output)
             envs = data.get("envs", [])
@@ -761,6 +762,7 @@ class PipelineGUI:
         """Localise un binaire conda/mamba via `where` (Windows) ou `which` (Unix)."""
         probe_cmd = ["where", name] if os.name == "nt" else ["which", name]
         try:
+            self.log(f"[verbose] Exécution de {' '.join(probe_cmd)}")
             output = subprocess.check_output(probe_cmd, text=True, stderr=subprocess.STDOUT)
             candidates = [line.strip() for line in output.splitlines() if line.strip()]
             for candidate in candidates:
