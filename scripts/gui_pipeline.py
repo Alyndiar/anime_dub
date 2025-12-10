@@ -238,6 +238,24 @@ class WorkflowRunner:
             return subprocess.list2cmdline(cmd)
         return shlex.join(cmd)
 
+    def _resolve_env_for_step(self, step_id: str) -> tuple[str | None, str]:
+        """Retourne l'environnement conda à utiliser et sa provenance.
+
+        La provenance est l'une de:
+        - "diar" : environnement spécifique diarisation renseigné
+        - "tts" : environnement spécifique TTS renseigné
+        - "default" : environnement par défaut du pipeline
+        - "none" : aucun environnement défini, on utilise l'environnement courant
+        """
+
+        if step_id == "03" and self.state.diar_env_name:
+            return self.state.diar_env_name, "diar"
+        if step_id == "08" and self.state.tts_env_name:
+            return self.state.tts_env_name, "tts"
+        if self.state.default_env_name:
+            return self.state.default_env_name, "default"
+        return None, "none"
+
     def _filter_units(self, units: list[str]) -> list[str]:
         if not units:
             return []
@@ -424,14 +442,7 @@ class WorkflowRunner:
 
     def _run_script(self, step: WorkflowStep, units: list[str]):
         script_path = PROJECT_ROOT / "scripts" / step.script
-        env_name: str | None
-        if step.step_id == "03":
-            env_name = self.state.diar_env_name or self.state.default_env_name
-        elif step.step_id == "08":
-            env_name = self.state.tts_env_name or self.state.default_env_name
-        else:
-            env_name = self.state.default_env_name
-
+        env_name, env_source = self._resolve_env_for_step(step.step_id)
         conda_cmd = self.state.conda_command or "conda"
         if env_name:
             cmd = [
@@ -445,10 +456,20 @@ class WorkflowRunner:
             ]
             use_shell = True
             if step.step_id == "03":
-                self.log(f"[info] Étape 03 (Diarisation) exécutée via {conda_cmd} run -n {env_name}")
+                if env_source == "diar":
+                    self.log(f"[info] Étape 03 (Diarisation) exécutée via {conda_cmd} run -n {env_name}")
+                else:
+                    self.log(
+                        f"[warn] Aucun environnement dédié diarisation renseigné, utilisation de {env_name} (source {env_source})"
+                    )
             elif step.step_id == "08":
-                self.log(f"[info] Étape 08 (XTTS) exécutée via {conda_cmd} run -n {env_name}")
-            elif self.state.default_env_name:
+                if env_source == "tts":
+                    self.log(f"[info] Étape 08 (XTTS) exécutée via {conda_cmd} run -n {env_name}")
+                else:
+                    self.log(
+                        f"[warn] Aucun environnement dédié XTTS renseigné, utilisation de {env_name} (source {env_source})"
+                    )
+            elif env_source == "default":
                 self.log(
                     f"[info] {step.label} exécuté via {conda_cmd} run -n {env_name} (environnement par défaut)"
                 )
