@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import threading
 from datetime import datetime
@@ -232,6 +233,13 @@ class WorkflowRunner:
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
 
+    @staticmethod
+    def _format_cmd(cmd: list[str]) -> str:
+        """Formate une commande pour l'affichage et l'exécution avec shell=True."""
+        if os.name == "nt":
+            return subprocess.list2cmdline(cmd)
+        return shlex.join(cmd)
+
     def _filter_units(self, units: list[str]) -> list[str]:
         if not units:
             return []
@@ -436,6 +444,7 @@ class WorkflowRunner:
                 "-u",
                 str(script_path),
             ]
+            use_shell = True
             if step.step_id == "03":
                 self.log(
                     f"[info] Étape 03 (Diarisation) exécutée via {self.state.conda_executable} run -n {env_name}"
@@ -448,6 +457,7 @@ class WorkflowRunner:
                 )
         else:
             cmd = ["python", "-u", str(script_path)]
+            use_shell = False
         stems = [u for u in units if u != "_all_"]
         for stem in stems:
             cmd.extend(["--stem", stem])
@@ -462,18 +472,20 @@ class WorkflowRunner:
         if stems:
             env["ANIME_DUB_SELECTED_STEMS"] = json.dumps(stems, ensure_ascii=False)
         env_summary = {k: v for k, v in env.items() if k.startswith("ANIME_DUB_")}
-        self.log(f"Exécution de {' '.join(cmd)}.")
+        formatted_cmd = self._format_cmd(cmd) if use_shell else " ".join(cmd)
+        self.log(f"Exécution de {formatted_cmd}.")
         if self.state.verbose:
             self.log(f"[verbose] Environnement : {env_summary}")
         try:
             process = subprocess.Popen(
-                cmd,
+                formatted_cmd if use_shell else cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
                 bufsize=1,
                 universal_newlines=True,
+                shell=use_shell,
             )
             assert process.stdout is not None
             for line in process.stdout:
@@ -720,9 +732,10 @@ class PipelineGUI:
     def _list_conda_envs(self) -> list[str]:
         executable = self.state.conda_executable or self.state.conda_command or "conda"
         cmd = [executable, "env", "list", "--json"]
+        cmd_str = WorkflowRunner._format_cmd(cmd)
         try:
-            self.log(f"[verbose] Exécution de {' '.join(cmd)}")
-            output = subprocess.check_output(cmd, text=True)
+            self.log(f"[verbose] Exécution de {cmd_str}")
+            output = subprocess.check_output(cmd_str, text=True, shell=True)
             data = json.loads(output)
             envs = data.get("envs", [])
             names = sorted({Path(path).name for path in envs})
