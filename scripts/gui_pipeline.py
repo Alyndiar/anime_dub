@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import threading
 from datetime import datetime
@@ -177,7 +178,6 @@ class WorkflowState:
         self.diar_env_name: str | None = "anime_dub_diar"
         self.tts_env_name: str | None = "anime_dub_tts"
         self.conda_command: str = "conda"
-        self.conda_executable: str = "conda"
 
     def load(self, path: Path = STATE_PATH) -> None:
         if not path.exists():
@@ -198,7 +198,6 @@ class WorkflowState:
         self.diar_env_name = data.get("diar_env_name", self.diar_env_name)
         self.tts_env_name = data.get("tts_env_name", self.tts_env_name)
         self.conda_command = data.get("conda_command", self.conda_command)
-        self.conda_executable = data.get("conda_executable", self.conda_executable)
 
     def save(self, path: Path = STATE_PATH) -> None:
         payload = {
@@ -217,7 +216,6 @@ class WorkflowState:
             "diar_env_name": self.diar_env_name,
             "tts_env_name": self.tts_env_name,
             "conda_command": self.conda_command,
-            "conda_executable": self.conda_executable,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -434,9 +432,10 @@ class WorkflowRunner:
         else:
             env_name = self.state.default_env_name
 
+        conda_cmd = self.state.conda_command or "conda"
         if env_name:
             cmd = [
-                self.state.conda_executable,
+                conda_cmd,
                 "run",
                 "-n",
                 env_name,
@@ -446,14 +445,12 @@ class WorkflowRunner:
             ]
             use_shell = True
             if step.step_id == "03":
-                self.log(
-                    f"[info] Étape 03 (Diarisation) exécutée via {self.state.conda_executable} run -n {env_name}"
-                )
+                self.log(f"[info] Étape 03 (Diarisation) exécutée via {conda_cmd} run -n {env_name}")
             elif step.step_id == "08":
-                self.log(f"[info] Étape 08 (XTTS) exécutée via {self.state.conda_executable} run -n {env_name}")
+                self.log(f"[info] Étape 08 (XTTS) exécutée via {conda_cmd} run -n {env_name}")
             elif self.state.default_env_name:
                 self.log(
-                    f"[info] {step.label} exécuté via {self.state.conda_executable} run -n {env_name} (environnement par défaut)"
+                    f"[info] {step.label} exécuté via {conda_cmd} run -n {env_name} (environnement par défaut)"
                 )
         else:
             cmd = ["python", "-u", str(script_path)]
@@ -730,7 +727,7 @@ class PipelineGUI:
             self.selection_label.configure(text=self._selection_summary())
 
     def _list_conda_envs(self) -> list[str]:
-        executable = self.state.conda_executable or self.state.conda_command or "conda"
+        executable = self.state.conda_command or "conda"
         cmd = [executable, "env", "list", "--json"]
         cmd_str = WorkflowRunner._format_cmd(cmd)
         try:
@@ -743,8 +740,8 @@ class PipelineGUI:
         except FileNotFoundError as exc:  # pragma: no cover - dépend du système de l'utilisateur
             if not self.env_list_warning_shown:
                 self.log(
-                    "[warn] Impossible de lister les environnements conda (exécutable introuvable). "
-                    "Ouvre la fenêtre ‘Configurer les environnements…’ pour sélectionner le binaire conda/mamba."
+                    "[warn] Impossible de lister les environnements conda (commande introuvable). "
+                    "Vérifie que conda/mamba est dans le PATH ou change la commande via la fenêtre ‘Configurer les environnements…’."
                 )
                 self.env_list_warning_shown = True
             else:
@@ -761,52 +758,15 @@ class PipelineGUI:
         return options
 
     def _refresh_env_choices(self):
-        if hasattr(self, "conda_paths"):
-            self.conda_paths[self.conda_cmd_var.get()] = self.conda_var.get().strip() or self.conda_paths.get(
-                self.conda_cmd_var.get()
-            )
         self.available_envs = self._list_conda_envs()
         for key, combo in getattr(self, "env_combos", {}).items():
             current = self.env_vars[key].get()
             combo.configure(values=self._env_options(current))
         self._update_conda_radio_states()
 
-    def _detect_binary(self, name: str) -> str | None:
-        """Localise un binaire conda/mamba via `where` (Windows) ou `which` (Unix)."""
-        probe_cmd = ["where", name] if os.name == "nt" else ["which", name]
-        try:
-            self.log(f"[verbose] Exécution de {' '.join(probe_cmd)}")
-            output = subprocess.check_output(probe_cmd, text=True, stderr=subprocess.STDOUT)
-            candidates = [line.strip() for line in output.splitlines() if line.strip()]
-            for candidate in candidates:
-                if Path(candidate).exists():
-                    return candidate
-        except Exception:
-            return None
-        return None
-
-    def _populate_conda_paths(self):
-        self.conda_paths: dict[str, str | None] = {
-            "conda": self._detect_binary("conda"),
-            "mamba": self._detect_binary("mamba"),
-        }
-        # Préserver une valeur personnalisée sauvegardée si elle est définie
-        saved_cmd = getattr(self.state, "conda_command", "conda")
-        saved_path = getattr(self.state, "conda_executable", "")
-        if saved_path:
-            self.conda_paths[saved_cmd] = saved_path
-
-    def _selected_conda_path(self) -> str:
-        cmd = self.conda_cmd_var.get() or "conda"
-        path = self.conda_var.get().strip()
-        if path:
-            return path
-        auto = self.conda_paths.get(cmd)
-        return auto or cmd
-
     def _update_conda_radio_states(self):
-        conda_path = self.conda_paths.get("conda")
-        mamba_path = self.conda_paths.get("mamba")
+        conda_path = shutil.which("conda")
+        mamba_path = shutil.which("mamba")
         if hasattr(self, "conda_radio") and self.conda_radio:
             if conda_path:
                 self.conda_radio.state(["!disabled"])
@@ -822,21 +782,13 @@ class PipelineGUI:
             self.conda_cmd_var.set("mamba")
         elif chosen == "mamba" and not mamba_path and conda_path:
             self.conda_cmd_var.set("conda")
-        # Ajuste l'entrée affichée
-        self._apply_conda_command_selection()
-
-    def _apply_conda_command_selection(self):
-        cmd = self.conda_cmd_var.get()
-        detected = self.conda_paths.get(cmd)
-        if detected:
-            self.conda_var.set(detected)
+        self.state.conda_command = self.conda_cmd_var.get()
 
     def open_envs_window(self):
         if hasattr(self, "env_window") and self.env_window.winfo_exists():
             self.env_window.focus_set()
             return
 
-        self._populate_conda_paths()
         self.available_envs = self._list_conda_envs()
         self.env_window = tk.Toplevel(self.root)
         self.env_window.title("Environnements conda")
@@ -876,7 +828,6 @@ class PipelineGUI:
 
         ttk.Label(container, text="Commande conda/mamba").grid(row=len(rows) + 1, column=0, sticky="w", padx=(0, 6), pady=(10, 2))
         self.conda_cmd_var = tk.StringVar(value=self.state.conda_command or "conda")
-        self.conda_var = tk.StringVar(value=self.state.conda_executable or "")
         radio_frame = ttk.Frame(container, style="Bg.TFrame")
         radio_frame.grid(row=len(rows) + 1, column=1, sticky="w", pady=(10, 2))
         self.conda_radio = ttk.Radiobutton(
@@ -884,7 +835,7 @@ class PipelineGUI:
             text="conda",
             variable=self.conda_cmd_var,
             value="conda",
-            command=self._apply_conda_command_selection,
+            command=self._update_conda_radio_states,
             style="Card.TRadiobutton",
         )
         self.conda_radio.pack(side=tk.LEFT, padx=(0, 8))
@@ -893,26 +844,13 @@ class PipelineGUI:
             text="mamba",
             variable=self.conda_cmd_var,
             value="mamba",
-            command=self._apply_conda_command_selection,
+            command=self._update_conda_radio_states,
             style="Card.TRadiobutton",
         )
         self.mamba_radio.pack(side=tk.LEFT)
 
-        ttk.Label(container, text="Exécutable détecté ou personnalisé").grid(
-            row=len(rows) + 2, column=0, sticky="w", padx=(0, 6), pady=(6, 2)
-        )
-        entry = ttk.Entry(container, textvariable=self.conda_var, width=40)
-        entry.grid(row=len(rows) + 2, column=1, sticky="ew", pady=(6, 2))
-        ttk.Button(
-            container,
-            text="...",
-            width=4,
-            command=self._browse_conda_executable,
-            style="Accent.TButton",
-        ).grid(row=len(rows) + 2, column=2, sticky="w", padx=(4, 0), pady=(6, 2))
-
         buttons = ttk.Frame(container, style="Bg.TFrame")
-        buttons.grid(row=len(rows) + 3, column=0, columnspan=3, sticky="e", pady=(10, 0))
+        buttons.grid(row=len(rows) + 2, column=0, columnspan=3, sticky="e", pady=(10, 0))
         ttk.Button(buttons, text="Rafraîchir la liste", command=self._refresh_env_choices, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(buttons, text="Enregistrer", command=self._apply_env_choices, style="Accent.TButton").pack(side=tk.LEFT)
 
@@ -925,27 +863,17 @@ class PipelineGUI:
         self.state.diar_env_name = self.env_vars["diar"].get().strip() or None
         self.state.tts_env_name = self.env_vars["tts"].get().strip() or None
         self.state.conda_command = self.conda_cmd_var.get() or "conda"
-        self.state.conda_executable = self._selected_conda_path()
         self._save_state()
         self.log(
             "[info] Environnements : défaut={} | diarisation={} | TTS={} | conda={}".format(
                 self.state.default_env_name or "courant",
                 self.state.diar_env_name or "courant",
                 self.state.tts_env_name or "courant",
-                self.state.conda_executable,
+                self.state.conda_command,
             )
         )
         if hasattr(self, "env_window") and self.env_window.winfo_exists():
             self.env_window.focus_set()
-
-    def _browse_conda_executable(self):  # pragma: no cover - interaction utilisateur
-        path = filedialog.askopenfilename(title="Choisir l'exécutable conda/mamba")
-        if path:
-            self.conda_var.set(path)
-            if hasattr(self, "conda_paths"):
-                self.conda_paths[self.conda_cmd_var.get()] = path
-            self.env_list_warning_shown = False
-            self._refresh_env_choices()
 
     def open_paths_window(self):
         if hasattr(self, "paths_window") and self.paths_window.winfo_exists():

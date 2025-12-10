@@ -324,7 +324,7 @@ conda run -n anime_dub_tts \
      - **Étape 03 – Diarisation** (préremplie avec `anime_dub_diar`).
      - **Étape 08 – XTTS** (préremplie avec `anime_dub_tts`).
    - choisissez les environnements dans les listes (ou laissez vide pour utiliser l’environnement courant), puis cliquez sur **Enregistrer**. Le GUI utilisera alors automatiquement `conda run -n <env> python -u ...` pour l’étape correspondante, l’environnement par défaut étant appliqué aux autres étapes.
-   - si `conda`/`mamba` n’est pas dans le `PATH` (ex. installation Miniconda sous Windows), cliquez sur le bouton `...` pour sélectionner l’exécutable. En cas d’erreur « Impossible de lister les environnements conda », ouvrez cette fenêtre et choisissez le binaire pour rafraîchir les listes.
+   - un bouton radio permet de choisir entre `conda` et `mamba` (option grisée si la commande n’est pas disponible). En cas d’erreur « Impossible de lister les environnements conda », vérifiez que la commande choisie est dans le `PATH` puis rafraîchissez.
 
 Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
 
