@@ -1,16 +1,14 @@
 name: anime_dub_diar
 channels:
-  - nvidia           # requis pour pytorch-cuda et ses dépendances (cuda-nvtx)
   - pytorch
   - conda-forge
   - defaults
 dependencies:
   - python=3.10
-  - pytorch=2.2.2
+  - pytorch=2.2.2       # build CPU (plus simple à résoudre sous Windows) ; GPU optionnel après création
   - torchvision=0.17.2
   - torchaudio=2.2.2
-  - pytorch-cuda=12.1  # CUDA 12.1 build compatible with RTX 4080
-  - ffmpeg=6.*         # validé avec pyannote.audio 3.1.1 ; torchcodec optionnel (fallback torchaudio)
+  - ffmpeg=6.*          # validé avec pyannote.audio 3.1.1 ; torchcodec reste optionnel (fallback torchaudio)
   - pip
   - numpy
   - openssl

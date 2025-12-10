@@ -202,23 +202,27 @@ incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 
 ### Environnement dédié pour la diarisation (PyTorch / pyannote / ffmpeg)
 
-`pyannote.audio` essaie d’utiliser `torchcodec` pour décoder les WAV. Sur Windows, aucune roue torchcodec compatible CUDA 12.1 n’est actuellement publiée sur PyPI, ce qui génère des avertissements au lancement. Le script `03_diarize.py` contourne automatiquement l’absence de torchcodec en préchargeant l’audio via `torchaudio` (fallback `soundfile`). Pour isoler la pile PyTorch/pyannote/ffmpeg, utilisez un environnement conda séparé, pré-configuré dans `config/diarization_env.yml` :
+`03_diarize.py` précharge l’audio via `torchaudio` (fallback `soundfile`) lorsque `torchcodec` est absent, ce qui permet de contourner l’absence de roues torchcodec Windows récentes. Pour repartir sur une base propre :
 
 ```bash
-# Création (une seule fois)
+# Supprimer l'ancien environnement si présent
+conda env remove -n anime_dub_diar
+
+# Recréer l'environnement dédié (pile PyTorch CPU par défaut)
 conda env create -f config/diarization_env.yml
 
-# Activation avant de lancer le GUI ou 03_diarize.py
+# Activer avant de lancer le GUI ou 03_diarize.py
 conda activate anime_dub_diar
 ```
 
-> ⚠️ Si la résolution échoue avec un message `cuda-nvtx >=12.1,<12.2` introuvable, vérifiez que le canal `nvidia` est bien activé (il est déjà listé dans `config/diarization_env.yml`). Vous pouvez l’ajouter globalement au besoin :
->
-> ```bash
-> conda config --add channels nvidia
-> ```
+Le fichier `config/diarization_env.yml` fournit PyTorch 2.2.2 CPU, pyannote.audio 3.1.1 et ffmpeg 6. Pour activer le GPU, installez ensuite le runtime CUDA correspondant (optionnel) dans **cet environnement fraîchement créé** :
 
-Cet environnement fournit PyTorch 2.2.2 (CUDA 12.1), pyannote.audio 3.1.1 et ffmpeg 6. torchcodec n’y est **pas** installé par défaut pour éviter les échecs Windows ; s’il devient disponible ultérieurement (roue compatible Windows/CUDA), installez-le dans cet environnement sans toucher à PyTorch :
+```bash
+conda activate anime_dub_diar
+conda install pytorch-cuda=12.1 -c pytorch -c nvidia -c conda-forge
+```
+
+Si une roue torchcodec compatible Windows est publiée ultérieurement, vous pourrez l’installer sans toucher à PyTorch :
 
 ```bash
 pip install --upgrade --no-deps torchcodec
@@ -240,7 +244,7 @@ except ImportError:
 PY
 ```
 
-**Compatibilité pyannote :** le fichier `config/diarization_env.yml` inclut `pyannote.audio==3.1.1` et les dépendances critiques (PyTorch 2.2.2 CUDA 12.1, ffmpeg 6). torchcodec reste optionnel grâce au préchargement audio dans `03_diarize.py`. Si vous installez torchcodec manuellement, vérifiez la cohérence torch/ffmpeg indiquée dans sa documentation. Si vous devez utiliser une autre version de pyannote, mettez à jour `config/diarization_env.yml` en conséquence et gardez une pile PyTorch/ffmpeg cohérente.
+**Compatibilité pyannote :** `config/diarization_env.yml` fige `pyannote.audio==3.1.1` et une pile PyTorch/ffmpeg testée côté CPU. Si vous changez de version de pyannote ou activez le GPU, vérifiez la cohérence torch/ffmpeg (et torchcodec si vous l’ajoutez) avec la table de compatibilité officielle.
 
 Lancez ensuite la diarisation sur un épisode :
 
