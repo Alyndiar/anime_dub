@@ -202,33 +202,27 @@ incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 
 ### Environnement dédié pour la diarisation (PyTorch / pyannote / ffmpeg)
 
-`03_diarize.py` précharge l’audio via `torchaudio` (fallback `soundfile`) lorsque `torchcodec` est absent, ce qui permet de contourner l’absence de roues torchcodec Windows récentes. Pour repartir sur une base propre :
+`03_diarize.py` précharge l’audio via `torchaudio` (fallback `soundfile`) lorsque `torchcodec` est absent. Pour repartir sur l’environnement qui a fonctionné (Windows + CUDA 12.8) :
 
 ```bash
-# Supprimer l'ancien environnement si présent
-conda env remove -n anime_dub_diar
+mamba deactivate
+mamba env remove -n anime_dub_diar  # ou conda env remove -n anime_dub_diar
 
-# Recréer l'environnement dédié (pile PyTorch CPU par défaut)
-conda env create -f config/diarization_env.yml
+# Base propre
+mamba create -n anime_dub_diar python=3.10 -c conda-forge
+mamba activate anime_dub_diar
+mamba install -c conda-forge "ffmpeg=7.*" uv
 
-# Activer avant de lancer le GUI ou 03_diarize.py
-conda activate anime_dub_diar
+# Pyannote + pile PyTorch/torchcodec validée (CUDA 12.8)
+uv pip install pyannote.audio==4.0.3
+uv pip uninstall torch torchaudio torchcodec
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+uv pip install torchcodec
 ```
 
-Le fichier `config/diarization_env.yml` fournit PyTorch 2.2.2 CPU, pyannote.audio 3.1.1 et ffmpeg 6. Pour activer le GPU, installez ensuite le runtime CUDA correspondant (optionnel) dans **cet environnement fraîchement créé** :
+Le fichier `config/diarization_env.yml` fournit uniquement la base (Python 3.10, ffmpeg 7, uv) si vous préférez `mamba env create -f config/diarization_env.yml` avant d’appliquer les commandes `uv pip` ci-dessus.
 
-```bash
-conda activate anime_dub_diar
-conda install pytorch-cuda=12.1 -c pytorch -c nvidia -c conda-forge
-```
-
-Si une roue torchcodec compatible Windows est publiée ultérieurement, vous pourrez l’installer sans toucher à PyTorch :
-
-```bash
-pip install --upgrade --no-deps torchcodec
-```
-
-Pour vérifier la stack audio avant d’exécuter la diarisation :
+Pour vérifier la stack audio avant d’exécuter la diarisation :
 
 ```bash
 python - <<'PY'
@@ -244,24 +238,19 @@ except ImportError:
 PY
 ```
 
-**Compatibilité pyannote :** `config/diarization_env.yml` fige `pyannote.audio==3.1.1` et une pile PyTorch/ffmpeg testée côté CPU. Si vous changez de version de pyannote ou activez le GPU, vérifiez la cohérence torch/ffmpeg (et torchcodec si vous l’ajoutez) avec la table de compatibilité officielle.
-
-Lancez ensuite la diarisation sur un épisode :
+Lancez ensuite la diarisation sur un épisode :
 
 ```bash
-python -u scripts/03_diarize.py --stem "Soul land episode 01 vostfr"
+mamba run -n anime_dub_diar python -u scripts/03_diarize.py --stem "Soul land episode 01 vostfr"
 ```
 
-Si PyTorch échoue au chargement avec un message `fbgemm.dll` ou `OSError: %1 n’est pas une application Win32 valide`, vérifiez :
+Si `*_mono16k.wav` est absent (étape 01 non exécutée), `03_diarize.py` bascule sur `*_full.wav`, downmix en mono et rééchantillonne en 16 kHz avant d’appeler pyannote. Pour un débit plus rapide et cohérent avec Whisper, générez néanmoins les `*_mono16k.wav` via `01_extract_audio.py`.
 
-- l’installation du **Microsoft Visual C++ Redistributable 2015-2022 (x64)** ;
-- la cohérence entre la version CUDA de PyTorch et le driver GPU (par exemple `pytorch-cuda=12.1` avec un driver ≥ 531) ;
-- au besoin, réinstallez PyTorch dans l’environnement diarisation :
+Si PyTorch échoue au chargement avec un message `fbgemm.dll` ou `OSError: %1 n’est pas une application Win32 valide`, vérifiez :
 
-```bash
-conda activate anime_dub_diar
-conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia -c conda-forge
-```
+- l’installation du **Microsoft Visual C++ Redistributable 2015-2022 (x64)** ;
+- la cohérence entre la version CUDA de PyTorch et le driver GPU ;
+- au besoin, réinstallez PyTorch dans l’environnement diarisation en reprenant la séquence `uv pip uninstall` / `uv pip install` ci-dessus.
 
 **Questions fréquentes :**
 

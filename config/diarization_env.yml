@@ -1,18 +1,8 @@
 name: anime_dub_diar
 channels:
-  - pytorch
   - conda-forge
-  - defaults
 dependencies:
   - python=3.10
-  - pytorch=2.2.2       # build CPU (plus simple à résoudre sous Windows) ; GPU optionnel après création
-  - torchvision=0.17.2
-  - torchaudio=2.2.2
-  - ffmpeg=6.*          # validé avec pyannote.audio 3.1.1 ; torchcodec reste optionnel (fallback torchaudio)
+  - ffmpeg=7.*
   - pip
-  - numpy
-  - openssl
-  - pip:
-      - pyannote.audio==3.1.1
-      - soundfile
-      - librosa
+  - uv                 # pour utiliser "uv pip" comme dans les instructions README

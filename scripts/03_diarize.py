@@ -11,12 +11,65 @@ from utils_logging import init_logger, parse_stems, should_verbose
 def iter_targets(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
     audio_raw = get_data_path("audio_raw_dir")
     logger.debug("Recherche des audios dans %s", audio_raw)
-    for wav in sorted(audio_raw.glob("*_mono16k.wav")):
-        stem = wav.stem.replace("_mono16k", "")
-        if stems_filter and stem not in stems_filter:
-            logger.debug("Ignore %s car non sélectionné", stem)
-            continue
+
+    candidates: set[str] = set()
+    for pattern, suffix in (("*_mono16k.wav", "_mono16k"), ("*_full.wav", "_full")):
+        for wav in sorted(audio_raw.glob(pattern)):
+            stem = wav.stem.replace(suffix, "")
+            if stems_filter and stem not in stems_filter:
+                logger.debug("Ignore %s car non sélectionné", stem)
+                continue
+            candidates.add(stem)
+
+    for stem in sorted(candidates):
         yield stem
+
+
+def load_waveform(
+    path: os.PathLike[str] | str,
+    logger: logging.Logger,
+    target_sample_rate: int = 16000,
+) -> dict:
+    """Charge l'audio en mono et, si possible, le rééchantillonne en 16 kHz."""
+
+    try:
+        import torchaudio
+
+        waveform, sample_rate = torchaudio.load(path)
+        waveform = waveform.float()
+        if waveform.size(0) > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+            logger.info("Downmix stéréo→mono pour %s", path)
+        if sample_rate != target_sample_rate:
+            logger.info(
+                "Rééchantillonnage de %s (%s Hz → %s Hz)",
+                path,
+                sample_rate,
+                target_sample_rate,
+            )
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, target_sample_rate
+            )
+            sample_rate = target_sample_rate
+        return {"waveform": waveform, "sample_rate": sample_rate}
+    except Exception as ta_exc:  # pragma: no cover - fallback de secours
+        logger.warning(
+            "Décodage via torchaudio impossible (%s). Fallback soundfile utilisé.", ta_exc,
+        )
+        import soundfile as sf
+
+        audio, sample_rate = sf.read(path, dtype="float32")
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+            logger.info("Downmix stéréo→mono pour %s (fallback soundfile)", path)
+        waveform = torch.from_numpy(audio).unsqueeze(0)
+        if sample_rate != target_sample_rate:
+            logger.warning(
+                "Soundfile ne rééchantillonne pas : audio %s resté à %s Hz (pyannote rééchantillonnera si nécessaire)",
+                path,
+                sample_rate,
+            )
+        return {"waveform": waveform, "sample_rate": sample_rate}
 
 
 def diarize_all(
@@ -65,19 +118,18 @@ def diarize_all(
     logger.info("Initialisation du pipeline pyannote (HF_TOKEN présent)")
 
     # Vérifie si on tourne dans un environnement dédié pour la diarisation.
-    # Cela permet de rester sur une pile PyTorch/pyannote/ffmpeg connue comme compatible
-    # (voir config/diarization_env.yml). torchcodec est optionnel grâce au fallback.
+    # torchcodec reste optionnel grâce au fallback de préchargement.
     diar_env = os.environ.get("CONDA_DEFAULT_ENV") or os.environ.get("VIRTUAL_ENV")
     if diar_env and "diar" not in diar_env:
         logger.warning(
             "Environnement actuel (%s) différent de l'environnement dédié diarisation."
-            " Utilise de préférence 'anime_dub_diar' défini dans config/diarization_env.yml",
+            " Utilise de préférence l'environnement 'anime_dub_diar' décrit dans le README",
             diar_env,
         )
     elif not diar_env:
         logger.info(
             "Aucun environnement virtuel détecté. Pour éviter les conflits de dépendances,"
-            " crée et active l'environnement conda 'anime_dub_diar' (config/diarization_env.yml)."
+            " crée et active l'environnement conda 'anime_dub_diar' (voir README)."
         )
 
     # PyTorch >= 2.6 charge les checkpoints en mode "weights_only=True" par défaut.
@@ -118,32 +170,28 @@ def diarize_all(
 
     processed_any = False
     for stem in iter_targets(stems, logger):
-        wav = audio_raw / f"{stem}_mono16k.wav"
+        wav_16k = audio_raw / f"{stem}_mono16k.wav"
+        wav_full = audio_raw / f"{stem}_full.wav"
+        if wav_16k.exists():
+            wav = wav_16k
+            source_desc = "mono16k"
+        elif wav_full.exists():
+            wav = wav_full
+            source_desc = "full (resample 16 kHz)"
+        else:
+            logger.warning(
+                "Aucun wav _mono16k ou _full trouvé pour %s dans %s", stem, audio_raw,
+            )
+            continue
         rttm_path = diar_dir / f"{stem}.rttm"
 
-        logger.info("Diarisation en cours : %s", wav)
+        logger.info("Diarisation en cours : %s (%s)", wav, source_desc)
 
         diar_input: str | dict
         if has_torchcodec:
             diar_input = str(wav)
         else:  # précharge pour contourner torchcodec manquant
-            try:
-                import torchaudio
-
-                waveform, sample_rate = torchaudio.load(wav)
-                diar_input = {"waveform": waveform, "sample_rate": sample_rate}
-            except Exception as ta_exc:  # pragma: no cover - fallback de secours
-                import soundfile as sf
-
-                audio, sample_rate = sf.read(wav, dtype="float32")
-                if audio.ndim == 1:
-                    waveform = torch.from_numpy(audio).unsqueeze(0)
-                else:
-                    waveform = torch.from_numpy(audio).T
-                diar_input = {"waveform": waveform, "sample_rate": sample_rate}
-                logger.warning(
-                    "Décodage via torchaudio impossible (%s). Fallback soundfile utilisé.", ta_exc,
-                )
+            diar_input = load_waveform(wav, logger)
 
         diarization = pipeline(diar_input)
 
@@ -154,7 +202,7 @@ def diarize_all(
         processed_any = True
 
     if not processed_any:
-        logger.warning("Aucun wav *_mono16k.wav trouvé pour diarisation.")
+        logger.warning("Aucun wav *_mono16k.wav ou *_full.wav trouvé pour diarisation.")
 
 
 if __name__ == "__main__":
