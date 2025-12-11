@@ -244,7 +244,9 @@ Lancez ensuite la diarisation sur un épisode :
 mamba run -n anime_dub_diar python -u scripts/03_diarize.py --stem "Soul land episode 01 vostfr"
 ```
 
-Si `*_mono16k.wav` est absent (étape 01 non exécutée), `03_diarize.py` bascule sur `*_full.wav`, downmix en mono et rééchantillonne en 16 kHz avant d’appeler pyannote. Pour un débit plus rapide et cohérent avec Whisper, générez néanmoins les `*_mono16k.wav` via `01_extract_audio.py`.
+`03_diarize.py` privilégie désormais les stems voix issus de l’étape 02 (`data/audio_stems/<stem>_vocals.wav`) et les downmix/réechantillonne en 16 kHz si besoin. Si aucun stem n’est disponible, le script bascule sur `*_mono16k.wav` (étape 01) puis, en dernier recours, sur `*_full.wav` avec resampling 16 kHz avant d’appeler pyannote.
+
+Le pipeline pyannote est automatiquement déplacé sur le GPU (`cuda`) quand `torch.cuda.is_available()` est vrai ; sinon il reste sur CPU avec un log explicite.
 
 Si PyTorch échoue au chargement avec un message `fbgemm.dll` ou `OSError: %1 n’est pas une application Win32 valide`, vérifiez :
 

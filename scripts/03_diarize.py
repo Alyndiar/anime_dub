@@ -8,21 +8,39 @@ from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
 
 
-def iter_targets(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
-    audio_raw = get_data_path("audio_raw_dir")
-    logger.debug("Recherche des audios dans %s", audio_raw)
+def iter_targets(
+    stems_filter: set[str] | None, logger: logging.Logger
+) -> Iterable[tuple[str, os.PathLike[str], str]]:
+    """Prépare la liste des stems à diariser en privilégiant les stems vocaux (étape 02)."""
 
-    candidates: set[str] = set()
-    for pattern, suffix in (("*_mono16k.wav", "_mono16k"), ("*_full.wav", "_full")):
+    audio_stems = get_data_path("audio_stems_dir")
+    audio_raw = get_data_path("audio_raw_dir")
+    logger.debug(
+        "Recherche des audios (priorité stems) dans %s puis %s", audio_stems, audio_raw
+    )
+
+    chosen: dict[str, tuple[os.PathLike[str], str]] = {}
+
+    for wav in sorted(audio_stems.glob("*_vocals.wav")):
+        stem = wav.stem.removesuffix("_vocals")
+        if stems_filter and stem not in stems_filter:
+            logger.debug("Ignore %s car non sélectionné (stems)", stem)
+            continue
+        chosen[stem] = (wav, "stems (vocals)")
+
+    for pattern, suffix, desc in (
+        ("*_mono16k.wav", "_mono16k", "audio complet mono16k"),
+        ("*_full.wav", "_full", "audio complet _full (resample 16 kHz)"),
+    ):
         for wav in sorted(audio_raw.glob(pattern)):
             stem = wav.stem.replace(suffix, "")
             if stems_filter and stem not in stems_filter:
-                logger.debug("Ignore %s car non sélectionné", stem)
+                logger.debug("Ignore %s car non sélectionné (audio brut)", stem)
                 continue
-            candidates.add(stem)
+            chosen.setdefault(stem, (wav, desc))
 
-    for stem in sorted(candidates):
-        yield stem
+    for stem in sorted(chosen):
+        yield stem, chosen[stem][0], chosen[stem][1]
 
 
 def load_waveform(
@@ -105,7 +123,6 @@ def diarize_all(
     from pyannote.audio.core.task import Specifications
 
     paths = ensure_directories(["diarization_dir"])
-    audio_raw = get_data_path("audio_raw_dir")
     diar_dir = paths["diarization_dir"]
 
     hf_token = os.environ.get("HF_TOKEN")
@@ -168,21 +185,26 @@ def diarize_all(
         token=hf_token,
     )
 
-    processed_any = False
-    for stem in iter_targets(stems, logger):
-        wav_16k = audio_raw / f"{stem}_mono16k.wav"
-        wav_full = audio_raw / f"{stem}_full.wav"
-        if wav_16k.exists():
-            wav = wav_16k
-            source_desc = "mono16k"
-        elif wav_full.exists():
-            wav = wav_full
-            source_desc = "full (resample 16 kHz)"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        pipeline.to(device)
+        if device == "cuda":
+            try:
+                gpu_name = torch.cuda.get_device_name(torch.cuda.current_device())
+            except Exception:  # pragma: no cover - info only
+                gpu_name = "GPU CUDA détecté"
+            logger.info("Pipeline pyannote placé sur le GPU (%s)", gpu_name)
         else:
-            logger.warning(
-                "Aucun wav _mono16k ou _full trouvé pour %s dans %s", stem, audio_raw,
-            )
-            continue
+            logger.info("Pipeline pyannote exécuté sur CPU (CUDA indisponible)")
+    except Exception as exc:  # pragma: no cover - garde-fou CUDA
+        logger.warning(
+            "Impossible de déplacer le pipeline sur CUDA (%s), fallback CPU.", exc
+        )
+        pipeline.to("cpu")
+        device = "cpu"
+
+    processed_any = False
+    for stem, wav, source_desc in iter_targets(stems, logger):
         rttm_path = diar_dir / f"{stem}.rttm"
 
         logger.info("Diarisation en cours : %s (%s)", wav, source_desc)
@@ -202,7 +224,9 @@ def diarize_all(
         processed_any = True
 
     if not processed_any:
-        logger.warning("Aucun wav *_mono16k.wav ou *_full.wav trouvé pour diarisation.")
+        logger.warning(
+            "Aucun stem vocal ou WAV brut (_mono16k/_full) trouvé pour la diarisation."
+        )
 
 
 if __name__ == "__main__":
