@@ -185,10 +185,10 @@ def diarize_all(
         token=hf_token,
     )
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     try:
         pipeline.to(device)
-        if device == "cuda":
+        if device.type == "cuda":
             try:
                 gpu_name = torch.cuda.get_device_name(torch.cuda.current_device())
             except Exception:  # pragma: no cover - info only
@@ -200,8 +200,9 @@ def diarize_all(
         logger.warning(
             "Impossible de déplacer le pipeline sur CUDA (%s), fallback CPU.", exc
         )
-        pipeline.to("cpu")
-        device = "cpu"
+        cpu_device = torch.device("cpu")
+        pipeline.to(cpu_device)
+        device = cpu_device
 
     processed_any = False
     for stem, wav, source_desc in iter_targets(stems, logger):
