@@ -99,6 +99,7 @@ def diarize_all(
 
     try:
         import torch
+        globals()["torch"] = torch  # pour les fallbacks (load_waveform)
     except OSError as exc:
         logger.error(
             "PyTorch ne peut pas se charger : %s",
@@ -204,6 +205,32 @@ def diarize_all(
         pipeline.to(cpu_device)
         device = cpu_device
 
+    def _write_rttm(result, file_obj):
+        """Compatibilité pyannote 3.x/4.x pour écrire un RTTM."""
+
+        if hasattr(result, "write_rttm"):
+            result.write_rttm(file_obj)
+            return
+
+        nested = getattr(result, "diarization", None)
+        if nested is not None and hasattr(nested, "write_rttm"):
+            nested.write_rttm(file_obj)
+            return
+
+        try:
+            from pyannote.core.utils.rttm import dump_rttm
+
+            dump_rttm(result, file_obj)
+            return
+        except Exception as exc:  # pragma: no cover - garde-fou
+            logger.error(
+                "Impossible d'écrire le RTTM (pyannote >=4)."
+                " Résultat retourné : %s (type %s)",
+                result,
+                type(result),
+            )
+            raise
+
     processed_any = False
     for stem, wav, source_desc in iter_targets(stems, logger):
         rttm_path = diar_dir / f"{stem}.rttm"
@@ -219,7 +246,7 @@ def diarize_all(
         diarization = pipeline(diar_input)
 
         with rttm_path.open("w", encoding="utf-8") as f:
-            diarization.write_rttm(f)
+            _write_rttm(diarization, f)
 
         logger.info("Diarisation écrite : %s", rttm_path)
         processed_any = True
