@@ -6,12 +6,17 @@ from typing import Iterable
 
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
+from utils_paths import normalize_stem, normalized_filter, stem_matches_filter
 
 
 def iter_targets(
     stems_filter: set[str] | None, logger: logging.Logger
-) -> Iterable[tuple[str, os.PathLike[str], str]]:
-    """Prépare la liste des stems à diariser en privilégiant les stems vocaux (étape 02)."""
+) -> Iterable[tuple[str, str, os.PathLike[str], str]]:
+    """Prépare la liste des stems à diariser en privilégiant les stems vocaux (étape 02).
+
+    Retourne le stem tel que trouvé, sa version normalisée (sans espaces) et la
+    source choisie.
+    """
 
     audio_stems = get_data_path("audio_stems_dir")
     audio_raw = get_data_path("audio_raw_dir")
@@ -19,11 +24,13 @@ def iter_targets(
         "Recherche des audios (priorité stems) dans %s puis %s", audio_stems, audio_raw
     )
 
+    stems_filter_norm = normalized_filter(stems_filter)
+
     chosen: dict[str, tuple[os.PathLike[str], str]] = {}
 
     for wav in sorted(audio_stems.glob("*_vocals.wav")):
         stem = wav.stem.removesuffix("_vocals")
-        if stems_filter and stem not in stems_filter:
+        if not stem_matches_filter(stem, stems_filter_norm):
             logger.debug("Ignore %s car non sélectionné (stems)", stem)
             continue
         chosen[stem] = (wav, "stems (vocals)")
@@ -34,13 +41,13 @@ def iter_targets(
     ):
         for wav in sorted(audio_raw.glob(pattern)):
             stem = wav.stem.replace(suffix, "")
-            if stems_filter and stem not in stems_filter:
+            if not stem_matches_filter(stem, stems_filter_norm):
                 logger.debug("Ignore %s car non sélectionné (audio brut)", stem)
                 continue
             chosen.setdefault(stem, (wav, desc))
 
     for stem in sorted(chosen):
-        yield stem, chosen[stem][0], chosen[stem][1]
+        yield stem, normalize_stem(stem), chosen[stem][0], chosen[stem][1]
 
 
 def load_waveform(
@@ -205,7 +212,7 @@ def diarize_all(
         pipeline.to(cpu_device)
         device = cpu_device
 
-    def _write_rttm(result, file_obj):
+    def _write_rttm(result, file_obj, uri: str):
         """Compatibilité pyannote 3.x/4.x pour écrire un RTTM."""
 
         def _extract_annotation(obj):
@@ -223,6 +230,12 @@ def diarize_all(
             return obj
 
         annotation = _extract_annotation(result)
+
+        if hasattr(annotation, "uri"):
+            try:
+                annotation.uri = uri
+            except Exception:  # pragma: no cover - setter absent/readonly
+                pass
 
         if hasattr(annotation, "write_rttm"):
             annotation.write_rttm(file_obj)
@@ -255,8 +268,8 @@ def diarize_all(
         raise RuntimeError("RTTM non écrit : writer introuvable")
 
     processed_any = False
-    for stem, wav, source_desc in iter_targets(stems, logger):
-        rttm_path = diar_dir / f"{stem}.rttm"
+    for stem_raw, stem_norm, wav, source_desc in iter_targets(stems, logger):
+        rttm_path = diar_dir / f"{stem_norm}.rttm"
 
         logger.info("Diarisation en cours : %s (%s)", wav, source_desc)
 
@@ -269,7 +282,7 @@ def diarize_all(
         diarization = pipeline(diar_input)
 
         with rttm_path.open("w", encoding="utf-8") as f:
-            _write_rttm(diarization, f)
+            _write_rttm(diarization, f, uri=stem_norm)
 
         logger.info("Diarisation écrite : %s", rttm_path)
         processed_any = True

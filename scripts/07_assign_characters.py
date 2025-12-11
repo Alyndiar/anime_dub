@@ -17,6 +17,7 @@ from utils_config import (
     load_characters_config,
 )
 from utils_logging import init_logger, parse_stems, should_verbose
+from utils_paths import normalize_stem, normalized_filter, stem_matches_filter
 
 SAMPLE_RATE = 16000
 
@@ -96,11 +97,21 @@ def assign_for_episode(
     logger: logging.Logger,
 ):
     stem = fr_json.stem.replace("_fr", "")
-    diar_rttm = diar_dir / f"{stem}.rttm"
-    wav_path = audio_raw / f"{stem}_mono16k.wav"
+    stem_norm = normalize_stem(stem)
+
+    diar_candidates = [diar_dir / f"{stem_norm}.rttm"]
+    if stem_norm != stem:
+        diar_candidates.append(diar_dir / f"{stem}.rttm")
+
+    wav_candidates = [audio_raw / f"{stem_norm}_mono16k.wav"]
+    if stem_norm != stem:
+        wav_candidates.append(audio_raw / f"{stem}_mono16k.wav")
+
+    diar_rttm = next((p for p in diar_candidates if p.exists()), diar_candidates[0])
+    wav_path = next((p for p in wav_candidates if p.exists()), wav_candidates[0])
 
     if not diar_rttm.exists():
-        logger.warning("Pas de diarisation pour %s", stem)
+        logger.warning("Pas de diarisation pour %s (nom normalisé : %s)", stem, stem_norm)
         return
 
     diar_segments = parse_rttm(diar_rttm)
@@ -137,7 +148,7 @@ def assign_for_episode(
             "text_fr": seg["text_fr"],
         })
 
-    out_path = seg_out_dir / f"{stem}_segments.json"
+    out_path = seg_out_dir / f"{stem_norm}_segments.json"
     out_path.write_text(json.dumps({"segments": merged}, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("Segments fusionnés écrits : %s", out_path)
 
@@ -145,9 +156,11 @@ def assign_for_episode(
 def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
     transcripts_fr = get_data_path("whisper_json_fr_dir")
     logger.debug("Recherche des transcriptions FR dans %s", transcripts_fr)
+    stems_filter_norm = normalized_filter(stems_filter)
+
     for fr_json in sorted(transcripts_fr.glob("*_fr.json")):
         stem = fr_json.stem.replace("_fr", "")
-        if stems_filter and stem not in stems_filter:
+        if not stem_matches_filter(stem, stems_filter_norm):
             logger.debug("Ignore %s car non sélectionné", stem)
             continue
         yield stem

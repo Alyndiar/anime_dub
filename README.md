@@ -246,6 +246,8 @@ mamba run -n anime_dub_diar python -u scripts/03_diarize.py --stem "Soul land ep
 
 `03_diarize.py` privilégie désormais les stems voix issus de l’étape 02 (`data/audio_stems/<stem>_vocals.wav`) et les downmix/réechantillonne en 16 kHz si besoin. Si aucun stem n’est disponible, le script bascule sur `*_mono16k.wav` (étape 01) puis, en dernier recours, sur `*_full.wav` avec resampling 16 kHz avant d’appeler pyannote.
 
+Les fichiers générés par les étapes 01/02/03 utilisent des noms sans espaces (remplacés par des underscores) afin d’éviter les erreurs RTTM sous pyannote. Les sources vidéo peuvent conserver les espaces, et les anciens fichiers avec espaces restent pris en compte, mais toutes les nouvelles sorties (`*_full.wav`, `*_mono16k.wav`, stems, `*.rttm`, etc.) sont écrites avec `_`.
+
 Le pipeline pyannote est automatiquement déplacé sur le GPU (`cuda`) quand `torch.cuda.is_available()` est vrai ; sinon il reste sur CPU avec un log explicite.
 
 Si PyTorch échoue au chargement avec un message `fbgemm.dll` ou `OSError: %1 n’est pas une application Win32 valide`, vérifiez :
