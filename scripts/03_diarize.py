@@ -208,28 +208,51 @@ def diarize_all(
     def _write_rttm(result, file_obj):
         """Compatibilité pyannote 3.x/4.x pour écrire un RTTM."""
 
-        if hasattr(result, "write_rttm"):
-            result.write_rttm(file_obj)
+        def _extract_annotation(obj):
+            if hasattr(obj, "write_rttm"):
+                return obj
+
+            for attr in (
+                "diarization",
+                "speaker_diarization",
+                "exclusive_speaker_diarization",
+            ):
+                nested = getattr(obj, attr, None)
+                if nested is not None:
+                    return nested
+            return obj
+
+        annotation = _extract_annotation(result)
+
+        if hasattr(annotation, "write_rttm"):
+            annotation.write_rttm(file_obj)
             return
 
-        nested = getattr(result, "diarization", None)
-        if nested is not None and hasattr(nested, "write_rttm"):
-            nested.write_rttm(file_obj)
-            return
+        for module_path in (
+            "pyannote.core.io.rttm",
+            "pyannote.core.utils.rttm",  # ancien chemin (pyannote 3.x)
+        ):
+            try:
+                module = __import__(module_path, fromlist=["dump_rttm"])
+                dump_rttm = getattr(module, "dump_rttm")
+                dump_rttm(annotation, file_obj)
+                return
+            except ModuleNotFoundError:
+                continue
+            except Exception as exc:  # pragma: no cover - garde-fou
+                logger.error(
+                    "Impossible d'écrire le RTTM via %s : %s (résultat type %s)",
+                    module_path,
+                    exc,
+                    type(annotation),
+                )
+                raise
 
-        try:
-            from pyannote.core.utils.rttm import dump_rttm
-
-            dump_rttm(result, file_obj)
-            return
-        except Exception as exc:  # pragma: no cover - garde-fou
-            logger.error(
-                "Impossible d'écrire le RTTM (pyannote >=4)."
-                " Résultat retourné : %s (type %s)",
-                result,
-                type(result),
-            )
-            raise
+        logger.error(
+            "Impossible d'écrire le RTTM : aucun writer compatible trouvé (résultat type %s)",
+            type(annotation),
+        )
+        raise RuntimeError("RTTM non écrit : writer introuvable")
 
     processed_any = False
     for stem, wav, source_desc in iter_targets(stems, logger):
