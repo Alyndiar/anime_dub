@@ -504,6 +504,8 @@ class WorkflowRunner:
                 bufsize=1,
                 universal_newlines=True,
                 shell=use_shell,
+                encoding="utf-8",
+                errors="replace",
             )
             assert process.stdout is not None
             for line in process.stdout:
