@@ -200,6 +200,62 @@ pip check
 Gardez les installations critiques (torch/torchaudio/torchvision, demucs, TTS) dans le même environnement pour éviter les
 incohérences, et réexécutez `pip check` après chaque mise à jour majeure.
 
+### Environnement dédié pour la diarisation (PyTorch / pyannote / ffmpeg)
+
+`03_diarize.py` précharge l’audio via `torchaudio` (fallback `soundfile`) lorsque `torchcodec` est absent. Pour repartir sur l’environnement qui a fonctionné (Windows + CUDA 12.8) :
+
+```bash
+mamba deactivate
+mamba env remove -n anime_dub_diar  # ou conda env remove -n anime_dub_diar
+
+# Base propre
+mamba create -n anime_dub_diar python=3.10 -c conda-forge
+mamba activate anime_dub_diar
+mamba install -c conda-forge "ffmpeg=7.*" uv
+
+# Pyannote + pile PyTorch/torchcodec validée (CUDA 12.8)
+uv pip install pyannote.audio==4.0.3
+uv pip uninstall torch torchaudio torchcodec
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+uv pip install torchcodec
+```
+
+Le fichier `config/diarization_env.yml` fournit uniquement la base (Python 3.10, ffmpeg 7, uv) si vous préférez `mamba env create -f config/diarization_env.yml` avant d’appliquer les commandes `uv pip` ci-dessus.
+
+Pour vérifier la stack audio avant d’exécuter la diarisation :
+
+```bash
+python - <<'PY'
+import torch
+print("PyTorch", torch.__version__, "CUDA", torch.version.cuda)
+import pyannote.audio
+print("pyannote.audio", pyannote.audio.__version__)
+try:
+    import torchcodec
+    print("torchcodec", torchcodec.__version__)
+except ImportError:
+    print("torchcodec absent : fallback torchaudio/soundfile actif pour le décodage")
+PY
+```
+
+Lancez ensuite la diarisation sur un épisode :
+
+```bash
+mamba run -n anime_dub_diar python -u scripts/03_diarize.py --stem "Soul land episode 01 vostfr"
+```
+
+`03_diarize.py` privilégie désormais les stems voix issus de l’étape 02 (`data/audio_stems/<stem>_vocals.wav`) et les downmix/réechantillonne en 16 kHz si besoin. Si aucun stem n’est disponible, le script bascule sur `*_mono16k.wav` (étape 01) puis, en dernier recours, sur `*_full.wav` avec resampling 16 kHz avant d’appeler pyannote.
+
+Les fichiers générés par les étapes 01/02/03 utilisent des noms sans espaces (remplacés par des underscores) afin d’éviter les erreurs RTTM sous pyannote. Les sources vidéo peuvent conserver les espaces, et les anciens fichiers avec espaces restent pris en compte, mais toutes les nouvelles sorties (`*_full.wav`, `*_mono16k.wav`, stems, `*.rttm`, etc.) sont écrites avec `_`.
+
+Le pipeline pyannote est automatiquement déplacé sur le GPU (`cuda`) quand `torch.cuda.is_available()` est vrai ; sinon il reste sur CPU avec un log explicite.
+
+Si PyTorch échoue au chargement avec un message `fbgemm.dll` ou `OSError: %1 n’est pas une application Win32 valide`, vérifiez :
+
+- l’installation du **Microsoft Visual C++ Redistributable 2015-2022 (x64)** ;
+- la cohérence entre la version CUDA de PyTorch et le driver GPU ;
+- au besoin, réinstallez PyTorch dans l’environnement diarisation en reprenant la séquence `uv pip uninstall` / `uv pip install` ci-dessus.
+
 **Questions fréquentes :**
 
 - **Qu’est-ce que gruut ?** Bibliothèque de **génération phonémique** (tokenisation, phonétisation) utilisée par Coqui TTS ; la
@@ -270,9 +326,14 @@ conda run -n anime_dub_tts \
   python scripts/08_synthesize_xtts.py --stem <episode> --verbose
 ```
 
-4) Via le GUI : ouvrez le menu **Options → Configurer l'environnement TTS…**, renseignez `anime_dub_tts` (et le binaire `conda`
-si nécessaire). Le GUI lancera alors automatiquement l’étape **08 Synthèse XTTS** avec `conda run -n <env> python ...` tout en
-conservant l’environnement courant pour les autres étapes.
+4) Via le GUI :
+   - ouvrez **Options → Configurer les environnements…**. La fenêtre affiche des listes déroulantes alimentées par `conda env list --json` :
+     - **Environnement par défaut** (prérempli avec `anime_dub`) appliqué à toutes les étapes sans override.
+     - **Étape 03 – Diarisation** (préremplie avec `anime_dub_diar`).
+     - **Étape 08 – XTTS** (préremplie avec `anime_dub_tts`).
+   - choisissez les environnements dans les listes (ou laissez vide pour utiliser l’environnement courant), puis cliquez sur **Enregistrer**. Le GUI utilisera alors automatiquement `conda run -n <env> python -u ...` pour l’étape correspondante, l’environnement par défaut étant appliqué aux autres étapes.
+   - l’option `python -u` et `PYTHONUNBUFFERED=1` sont appliquées par le GUI pour capter les logs en **temps réel** dans la fenêtre de sortie (utile pour pyannote/XTTS).
+   - un bouton radio permet de choisir entre `conda` et `mamba` (option grisée si la commande n’est pas disponible). En cas d’erreur « Impossible de lister les environnements conda », vérifiez que la commande choisie est dans le `PATH` puis rafraîchissez.
 
 Ainsi, les parties dépendantes de torch/CUDA et les parties contraintes par `TTS/gruut` sont isolées. Vérifiez que les deux environnements pointent vers la même racine de projet pour partager les artefacts, et relancez `pip check` après toute mise à jour majeure.
 

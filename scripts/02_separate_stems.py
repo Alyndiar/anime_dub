@@ -22,6 +22,7 @@ import torch
 
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
+from utils_paths import normalize_stem, normalized_filter, stem_matches_filter
 
 
 def log(message: str, logger: logging.Logger, level: int = logging.DEBUG) -> None:
@@ -107,11 +108,18 @@ def run(cmd: list[str], logger: logging.Logger, verbose: bool) -> None:
     subprocess.run(cmd, check=True)
 
 
-def iter_audio_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[tuple[str, Path]]:
-    """Itère sur les wav complets issus de l'extraction."""
+def iter_audio_sources(
+    stems_filter: set[str] | None, logger: logging.Logger
+) -> Iterable[tuple[str, str, Path]]:
+    """Itère sur les wav complets issus de l'extraction.
+
+    Retourne le stem tel que trouvé et sa version normalisée (sans espaces).
+    """
 
     audio_raw = get_data_path("audio_raw_dir")
     log(f"Recherche des WAV complets dans {audio_raw}", logger)
+
+    stems_filter_norm = normalized_filter(stems_filter)
 
     candidates = sorted(audio_raw.glob("*_full.wav"))
     if not candidates:
@@ -120,10 +128,10 @@ def iter_audio_sources(stems_filter: set[str] | None, logger: logging.Logger) ->
 
     for wav_path in candidates:
         stem = wav_path.stem.replace("_full", "")
-        if stems_filter and stem not in stems_filter:
+        if not stem_matches_filter(stem, stems_filter_norm):
             log(f"Ignoré (non sélectionné) : {stem}", logger)
             continue
-        yield stem, wav_path
+        yield stem, normalize_stem(stem), wav_path
 
 
 def separate_with_demucs(
@@ -228,15 +236,21 @@ def separate_all_stems(
 
     processed_any = False
 
-    for stem, audio_path in iter_audio_sources(stems_filter, logger):
-        target_vocals = stems_dir / f"{stem}_vocals.wav"
-        target_instr = stems_dir / f"{stem}_instrumental.wav"
+    errors: list[str] = []
+
+    for stem_raw, stem_norm, audio_path in iter_audio_sources(stems_filter, logger):
+        target_vocals = stems_dir / f"{stem_norm}_vocals.wav"
+        target_instr = stems_dir / f"{stem_norm}_instrumental.wav"
 
         if target_vocals.exists() and target_instr.exists() and not overwrite:
-            log(f"Déjà présent, saut : {stem}", logger, level=logging.INFO)
+            log(f"Déjà présent, saut : {stem_raw}", logger, level=logging.INFO)
             continue
 
-        log(f"Séparation de {stem} via {tool}", logger, level=logging.INFO)
+        log(
+            f"Séparation de {stem_raw} (sorties sans espaces : {stem_norm}) via {tool}",
+            logger,
+            level=logging.INFO,
+        )
         try:
             if tool == "demucs":
                 vocals_src, instr_src = separate_with_demucs(
@@ -260,7 +274,12 @@ def separate_all_stems(
                     verbose,
                 )
         except Exception as exc:  # noqa: BLE001
-            log(f"Échec de la séparation pour {stem}: {exc}", logger, level=logging.ERROR)
+            log(
+                f"Échec de la séparation pour {stem_raw}: {exc}",
+                logger,
+                level=logging.ERROR,
+            )
+            errors.append(stem_raw)
             continue
 
         shutil.copyfile(vocals_src, target_vocals)
@@ -275,6 +294,14 @@ def separate_all_stems(
 
     if not processed_any:
         log("Aucun stem traité (fichiers absents ou déjà présents).", logger, level=logging.WARNING)
+
+    if errors:
+        log(
+            "Certaines séparations ont échoué : " + ", ".join(sorted(errors)),
+            logger,
+            level=logging.ERROR,
+        )
+        raise SystemExit(1)
 
 
 def parse_args() -> argparse.Namespace:

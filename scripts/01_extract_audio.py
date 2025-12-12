@@ -15,6 +15,7 @@ from typing import Iterable, Optional
 
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
+from utils_paths import normalize_stem, normalized_filter, stem_matches_filter
 
 
 def log(message: str, logger: logging.Logger, level: int = logging.DEBUG) -> None:
@@ -53,26 +54,40 @@ def find_source_file(stem: str, base_dir: Path, logger: logging.Logger) -> Optio
     return None
 
 
-def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[tuple[str, Path]]:
-    """Itère sur les vidéos sources, en filtrant si nécessaire."""
+def iter_sources(
+    stems_filter: set[str] | None, logger: logging.Logger
+) -> Iterable[tuple[str, str, Path]]:
+    """Itère sur les vidéos sources, en filtrant si nécessaire.
+
+    Retourne le stem d'affichage (tel que sur disque) et sa version normalisée
+    pour générer des noms de fichiers sans espaces.
+    """
 
     episodes_raw = get_data_path("episodes_raw_dir")
     log(f"Recherche des sources dans {episodes_raw}", logger)
+
+    stems_filter_norm = normalized_filter(stems_filter)
 
     stems_to_check: Iterable[str]
     if stems_filter:
         stems_to_check = sorted(stems_filter)
     else:
-        stems_to_check = sorted({p.stem for p in episodes_raw.glob("*") if p.suffix in VIDEO_EXTENSIONS})
+        stems_to_check = sorted(
+            {
+                p.stem
+                for p in episodes_raw.glob("*")
+                if p.suffix in VIDEO_EXTENSIONS
+            }
+        )
 
     for stem in stems_to_check:
-        if stems_filter and stem not in stems_filter:
+        if not stem_matches_filter(stem, stems_filter_norm):
             log(f"Ignore {stem} car non sélectionné", logger)
             continue
         video_path = find_source_file(stem, episodes_raw, logger)
         if not video_path:
             continue
-        yield stem, video_path
+        yield stem, normalize_stem(stem), video_path
 
 
 def extract_audio_for_all_sources(
@@ -91,11 +106,11 @@ def extract_audio_for_all_sources(
 
     processed_any = False
 
-    for stem, video in iter_sources(stems, logger):
-        full_wav = audio_raw / f"{stem}_full.wav"
-        mono16 = audio_raw / f"{stem}_mono16k.wav"
+    for stem_display, stem_normalized, video in iter_sources(stems, logger):
+        full_wav = audio_raw / f"{stem_normalized}_full.wav"
+        mono16 = audio_raw / f"{stem_normalized}_mono16k.wav"
 
-        log(f"Traitement de {stem}", logger)
+        log(f"Traitement de {stem_display} (sorties sans espaces : {stem_normalized})", logger)
         log(f"Fichier vidéo : {video}", logger)
         log(f"Fichier wav complet : {full_wav}", logger)
         log(f"Fichier wav mono16k : {mono16}", logger)

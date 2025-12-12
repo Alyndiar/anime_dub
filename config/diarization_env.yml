@@ -1,0 +1,8 @@
+name: anime_dub_diar
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - ffmpeg=7.*
+  - pip
+  - uv                 # pour utiliser "uv pip" comme dans les instructions README
