@@ -236,6 +236,8 @@ def separate_all_stems(
 
     processed_any = False
 
+    errors: list[str] = []
+
     for stem_raw, stem_norm, audio_path in iter_audio_sources(stems_filter, logger):
         target_vocals = stems_dir / f"{stem_norm}_vocals.wav"
         target_instr = stems_dir / f"{stem_norm}_instrumental.wav"
@@ -272,7 +274,12 @@ def separate_all_stems(
                     verbose,
                 )
         except Exception as exc:  # noqa: BLE001
-            log(f"Échec de la séparation pour {stem}: {exc}", logger, level=logging.ERROR)
+            log(
+                f"Échec de la séparation pour {stem_raw}: {exc}",
+                logger,
+                level=logging.ERROR,
+            )
+            errors.append(stem_raw)
             continue
 
         shutil.copyfile(vocals_src, target_vocals)
@@ -287,6 +294,14 @@ def separate_all_stems(
 
     if not processed_any:
         log("Aucun stem traité (fichiers absents ou déjà présents).", logger, level=logging.WARNING)
+
+    if errors:
+        log(
+            "Certaines séparations ont échoué : " + ", ".join(sorted(errors)),
+            logger,
+            level=logging.ERROR,
+        )
+        raise SystemExit(1)
 
 
 def parse_args() -> argparse.Namespace:
