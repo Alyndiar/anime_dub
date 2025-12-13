@@ -12,6 +12,7 @@ from TTS.api import TTS
 
 from utils_config import PROJECT_ROOT, ensure_directories, get_data_path, load_xtts_config
 from utils_logging import init_logger, parse_stems, should_verbose
+from utils_paths import normalized_filter, stem_matches_filter
 
 
 def build_char_voices(reference_cfg, logger: logging.Logger):
@@ -78,9 +79,10 @@ def synthesize_episode(
 def iter_segments(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
     seg_in = get_data_path("segments_dir")
     logger.debug("Recherche des segments dans %s", seg_in)
+    stems_filter_norm = normalized_filter(stems_filter)
     for seg_file in sorted(seg_in.glob("*_segments.json")):
         stem = seg_file.stem.replace("_segments", "")
-        if stems_filter and stem not in stems_filter:
+        if not stem_matches_filter(stem, stems_filter_norm):
             logger.debug("Ignore %s car non sélectionné", stem)
             continue
         yield stem
@@ -127,7 +129,8 @@ def main():
     logger = init_logger("synthesize_xtts", verbose)
 
     stems_filter = parse_stems(args.stem, logger)
-    logger.info("Stems ciblés : %s", sorted(stems_filter) if stems_filter else "tous")
+    stems_display = sorted(normalized_filter(stems_filter)) if stems_filter else "tous"
+    logger.info("Stems ciblés (normalisés) : %s", stems_display)
 
     synthesize_all(stems_filter, verbose=verbose, logger=logger)
 

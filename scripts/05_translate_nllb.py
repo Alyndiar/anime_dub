@@ -10,6 +10,7 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
+from utils_paths import normalized_filter, stem_matches_filter
 
 
 # Codes FLORES pour chinois simplifié / français
@@ -54,9 +55,10 @@ def write_srt(segments, srt_path):
 def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Iterable[str]:
     src_json_dir = get_data_path("whisper_json_dir")
     logger.debug("Recherche des transcriptions JSON dans %s", src_json_dir)
+    stems_filter_norm = normalized_filter(stems_filter)
     for jpath in sorted(src_json_dir.glob("*.json")):
         stem = jpath.stem
-        if stems_filter and stem not in stems_filter:
+        if not stem_matches_filter(stem, stems_filter_norm):
             logger.debug("Ignore %s car non sélectionné", stem)
             continue
         yield stem
@@ -119,6 +121,7 @@ if __name__ == "__main__":
     logger = init_logger("translate_nllb", verbose)
 
     stems_filter = parse_stems(args.stem, logger)
-    logger.info("Stems ciblés : %s", sorted(stems_filter) if stems_filter else "tous")
+    stems_display = sorted(normalized_filter(stems_filter)) if stems_filter else "tous"
+    logger.info("Stems ciblés (normalisés) : %s", stems_display)
 
     translate_all(stems_filter, verbose=verbose, logger=logger)
