@@ -56,8 +56,8 @@ def iter_sources(stems_filter: set[str] | None, logger: logging.Logger) -> Itera
     src_json_dir = get_data_path("whisper_json_dir")
     logger.debug("Recherche des transcriptions JSON dans %s", src_json_dir)
     stems_filter_norm = normalized_filter(stems_filter)
-    for jpath in sorted(src_json_dir.glob("*.json")):
-        stem = jpath.stem
+    for jpath in sorted(src_json_dir.glob("*_clean_zh.json")):
+        stem = jpath.stem.replace("_clean_zh", "")
         if not stem_matches_filter(stem, stems_filter_norm):
             logger.debug("Ignore %s car non sélectionné", stem)
             continue
@@ -83,19 +83,25 @@ def translate_all(
 
     processed_any = False
     for stem in iter_sources(stems, logger):
-        jpath = src_json_dir / f"{stem}.json"
+        jpath = src_json_dir / f"{stem}_clean_zh.json"
+        if not jpath.exists():
+            logger.warning("Fichier nettoyé introuvable, ignoré : %s", jpath)
+            continue
+
         logger.info("Traduction : %s", jpath)
         data = json.loads(jpath.read_text(encoding="utf-8"))
         segs = data["segments"]
 
-        texts = [s["text"] for s in segs]
+        texts = [s.get("text_zh") or s.get("text", "") for s in segs]
         batch_size = 16
         translations = []
         for i in tqdm(range(0, len(texts), batch_size), desc=stem):
             batch = texts[i:i+batch_size]
             translations.extend(translate_batch(batch, tokenizer, model))
 
-        for s, fr in zip(segs, translations):
+        for s, fr, zh in zip(segs, translations, texts):
+            if "text_zh" not in s:
+                s["text_zh"] = zh.strip()
             s["text_fr"] = fr.strip()
 
         out_json = out_json_dir / f"{stem}_fr.json"

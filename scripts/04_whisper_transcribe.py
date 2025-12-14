@@ -10,6 +10,7 @@ from typing import Iterable
 import soundfile as sf
 from faster_whisper import WhisperModel
 
+from clean_whisper_json import DEFAULT_CONFIG, clean_whisper_json
 from utils_config import ensure_directories, get_data_path
 from utils_logging import init_logger, parse_stems, should_verbose
 from utils_paths import normalized_filter, stem_matches_filter
@@ -135,6 +136,8 @@ def transcribe_all(
     for stem, source_path, source_desc in iter_sources(stems, logger):
         wav = ensure_mono16k(source_path, whisper_work, logger)
         json_path = out_json / f"{stem}.json"
+        clean_json_path = out_json / f"{stem}_clean_zh.json"
+        report_path = out_json / f"{stem}_clean_report.json"
         srt_path = out_srt / f"{stem}_zh.srt"
 
         logger.info("Transcription (%s) : %s", source_desc, wav)
@@ -152,6 +155,12 @@ def transcribe_all(
 
         json_path.write_text(json.dumps({"segments": segments_out}, ensure_ascii=False, indent=2), encoding="utf-8")
         write_srt(segments_out, srt_path)
+        clean_whisper_json(
+            str(json_path),
+            str(clean_json_path),
+            str(report_path),
+            DEFAULT_CONFIG,
+        )
         logger.info("Whisper OK : %s", stem)
         processed_any = True
 
