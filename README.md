@@ -71,7 +71,7 @@ anime-dub/
 │  ├─ audio_stems/           # Stems (vocals, instrumental)
 │  ├─ diarization/           # Résultats pyannote
 │  ├─ transcripts/
-│  │  ├─ whisper_json/       # Segments Whisper (ZH)
+│  │  ├─ whisper_json/       # Segments Whisper (ZH) + variantes nettoyées *_clean_zh.json
 │  │  ├─ whisper_json_fr/    # Segments Whisper traduits (ZH→FR)
 │  │  ├─ zh_srt/             # Sous-titres ZH
 │  │  └─ fr_srt/             # Sous-titres FR
