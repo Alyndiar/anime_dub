@@ -63,7 +63,7 @@ STEPS: list[WorkflowStep] = [
     WorkflowStep("02", "Séparation stems", "02_separate_stems.py", "audio_raw_dir", "*_full.wav", "Demucs/UVR", supports_verbose=True),
     WorkflowStep("03", "Diarisation", "03_diarize.py", "audio_raw_dir", "*_mono16k.wav", "pyannote 3.1"),
     WorkflowStep("04", "Transcription Whisper", "04_whisper_transcribe.py", "audio_raw_dir", "*_mono16k.wav", "Whisper large-v3"),
-    WorkflowStep("05", "Traduction NLLB", "05_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB 600M"),
+    WorkflowStep("05", "Traduction NLLB", "05_translate_nllb.py", "whisper_json_dir", "*.json", "NLLB distillé 1.3B"),
     WorkflowStep("06", "Banque de voix", "06_build_speaker_bank.py", None, None, "Initialisation/embeddings"),
     WorkflowStep("07", "Attribution personnages", "07_assign_characters.py", "whisper_json_fr_dir", "*_fr.json", "Matching embeddings"),
     WorkflowStep("08", "Synthèse XTTS", "08_synthesize_xtts.py", "segments_dir", "*_segments.json", "XTTS-v2"),
