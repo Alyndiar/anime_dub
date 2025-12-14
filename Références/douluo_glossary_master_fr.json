@@ -1,0 +1,538 @@
+{
+  "meta": {
+    "series": "Douluo Dalu / Soul Land",
+    "language": "fr",
+    "version": "1.0",
+    "notes": "Glossaire maître pour traduction fansub; types: name (jamais traduit), term/title/phrase (enforcement strict)."
+  },
+  "lock_rules": {
+    "name": "never_translate",
+    "term": "strict",
+    "title": "strict",
+    "phrase": "strict"
+  },
+  "entries": [
+    {
+      "zh": "千仞雪",
+      "fr": "Qian Renxue",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "古榕",
+      "fr": "Gu Rong",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "唐三",
+      "fr": "Tang San",
+      "note": "Nom principal",
+      "type": "name"
+    },
+    {
+      "zh": "唐昊",
+      "fr": "Tang Hao",
+      "note": "Père de Tang San",
+      "type": "name"
+    },
+    {
+      "zh": "奥斯卡",
+      "fr": "Oscar",
+      "note": "Nom propre (souvent appelé Oscar)",
+      "type": "name"
+    },
+    {
+      "zh": "宁荣荣",
+      "fr": "Ning Rongrong",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "宁风致",
+      "fr": "Ning Fengzhi",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "小舞",
+      "fr": "Xiao Wu",
+      "note": "Nom principal",
+      "type": "name"
+    },
+    {
+      "zh": "尘心",
+      "fr": "Chen Xin",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "弗兰德",
+      "fr": "Flander",
+      "note": "Nom propre (usage FR variable; ajuster si besoin)",
+      "type": "name"
+    },
+    {
+      "zh": "戴沐白",
+      "fr": "Dai Mubai",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "朱竹清",
+      "fr": "Zhu Zhuqing",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "比比东",
+      "fr": "Bibi Dong",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "独孤博",
+      "fr": "Dugu Bo",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "玉小刚",
+      "fr": "Yu Xiaogang",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "赵无极",
+      "fr": "Zhao Wuji",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "阿银",
+      "fr": "A Yin",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "马红俊",
+      "fr": "Ma Hongjun",
+      "note": "Nom propre",
+      "type": "name"
+    },
+    {
+      "zh": "七宝琉璃宗",
+      "fr": "Secte du Verre Précieux aux Sept Trésors",
+      "note": "Secte de soutien",
+      "type": "term"
+    },
+    {
+      "zh": "不可能",
+      "fr": "Impossible.",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "住手",
+      "fr": "Arrête !",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "佛怒唐莲",
+      "fr": "Fleur de Lotus de la Colère du Bouddha",
+      "note": "Arme cachée suprême",
+      "type": "term"
+    },
+    {
+      "zh": "你敢",
+      "fr": "Tu oses ?",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "供奉",
+      "fr": "Hiérophante",
+      "note": "Titre religieux/hiérarchique (selon contexte)",
+      "type": "title"
+    },
+    {
+      "zh": "内门",
+      "fr": "Secte intérieure",
+      "note": "Disciples d’élite",
+      "type": "term"
+    },
+    {
+      "zh": "前辈",
+      "fr": "Aîné",
+      "note": "Formule d’adresse respectueuse",
+      "type": "title"
+    },
+    {
+      "zh": "十万年魂环",
+      "fr": "Anneau spirituel de dix mille ans",
+      "note": "Anneau suprême",
+      "type": "term"
+    },
+    {
+      "zh": "史莱克七怪",
+      "fr": "Les Sept Monstres de Shrek",
+      "note": "Groupe central de protagonistes",
+      "type": "term"
+    },
+    {
+      "zh": "史莱克学院",
+      "fr": "Académie Shrek",
+      "note": "Académie légendaire",
+      "type": "term"
+    },
+    {
+      "zh": "唐门",
+      "fr": "Secte Tang",
+      "note": "Organisation d’origine de Tang San",
+      "type": "term"
+    },
+    {
+      "zh": "圣魂村",
+      "fr": "Village de l’Âme Sacrée",
+      "note": "Village natal de Tang San",
+      "type": "term"
+    },
+    {
+      "zh": "外门",
+      "fr": "Branche extérieure",
+      "note": "Disciples externes",
+      "type": "term"
+    },
+    {
+      "zh": "大供奉",
+      "fr": "Grand Hiérophante",
+      "note": "Titre hiérarchique",
+      "type": "title"
+    },
+    {
+      "zh": "大魂师",
+      "fr": "Grand Maître des âmes",
+      "note": "Rang 3",
+      "type": "term"
+    },
+    {
+      "zh": "天斗帝国",
+      "fr": "Empire Céleste de Tian Dou",
+      "note": "Empire majeur",
+      "type": "term"
+    },
+    {
+      "zh": "天斗皇家学院",
+      "fr": "Académie Royale de Tian Dou",
+      "note": "Académie impériale",
+      "type": "term"
+    },
+    {
+      "zh": "封号斗罗",
+      "fr": "Douluo Titulé",
+      "note": "Rang suprême (9e)",
+      "type": "term"
+    },
+    {
+      "zh": "找死",
+      "fr": "Tu cherches la mort.",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "掌门",
+      "fr": "Maître de Secte",
+      "note": "Chef de la Secte Tang",
+      "type": "term"
+    },
+    {
+      "zh": "控鹤擒龙",
+      "fr": "Contrôle de la Grue et Capture du Dragon",
+      "note": "Technique de saisie",
+      "type": "term"
+    },
+    {
+      "zh": "擒龙控鹤",
+      "fr": "Saisie du Dragon, Contrôle de la Grue",
+      "note": "Variante",
+      "type": "term"
+    },
+    {
+      "zh": "放肆",
+      "fr": "Insolence",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "教皇",
+      "fr": "Souverain Pontife",
+      "note": "Chef du Palais de l’Esprit Martial",
+      "type": "term"
+    },
+    {
+      "zh": "教皇冕下",
+      "fr": "Souverain Pontife",
+      "note": "Titre honorifique",
+      "type": "title"
+    },
+    {
+      "zh": "斗罗大陆",
+      "fr": "Continent Douluo",
+      "note": "Nom officiel du monde",
+      "type": "term"
+    },
+    {
+      "zh": "昊天城",
+      "fr": "Cité du Marteau Céleste",
+      "note": "Ville sectaire",
+      "type": "term"
+    },
+    {
+      "zh": "昊天宗",
+      "fr": "Secte du Marteau Céleste",
+      "note": "Grande secte",
+      "type": "term"
+    },
+    {
+      "zh": "星斗大森林",
+      "fr": "Grande Forêt de Xingdou",
+      "note": "Forêt majeure de bêtes spirituelles",
+      "type": "term"
+    },
+    {
+      "zh": "星罗帝国",
+      "fr": "Empire Stellaire de Xing Luo",
+      "note": "Empire rival",
+      "type": "term"
+    },
+    {
+      "zh": "暗器",
+      "fr": "Arme cachée",
+      "note": "Spécialité de la Secte Tang",
+      "type": "term"
+    },
+    {
+      "zh": "暗器百解",
+      "fr": "Cent Décryptages des Armes Cachées",
+      "note": "Traité Tang",
+      "type": "term"
+    },
+    {
+      "zh": "暴雨梨花针",
+      "fr": "Aiguilles de Fleurs de Poirier sous la Pluie",
+      "note": "Arme cachée",
+      "type": "term"
+    },
+    {
+      "zh": "杀戮之都",
+      "fr": "Cité du Massacre",
+      "note": "Lieu interdit",
+      "type": "term"
+    },
+    {
+      "zh": "武魂",
+      "fr": "Esprit martial",
+      "note": "Capacité éveillée propre à chaque individu",
+      "type": "term"
+    },
+    {
+      "zh": "武魂殿",
+      "fr": "Palais de l’Esprit Martial",
+      "note": "Organisation majeure",
+      "type": "term"
+    },
+    {
+      "zh": "殿下",
+      "fr": "Votre Altesse",
+      "note": "Titre honorifique",
+      "type": "title"
+    },
+    {
+      "zh": "海神岛",
+      "fr": "Île du Dieu de la Mer",
+      "note": "Lieu sacré",
+      "type": "term"
+    },
+    {
+      "zh": "滚",
+      "fr": "Dégage.",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "玄天功",
+      "fr": "Art Céleste Mystique",
+      "note": "Technique fondamentale Tang",
+      "type": "term"
+    },
+    {
+      "zh": "玄天宝录",
+      "fr": "Trésor Céleste Mystique",
+      "note": "Manuel de cultivation",
+      "type": "term"
+    },
+    {
+      "zh": "玄玉手",
+      "fr": "Main de Jade Mystique",
+      "note": "Technique corporelle",
+      "type": "term"
+    },
+    {
+      "zh": "百万年魂环",
+      "fr": "Anneau spirituel d’un million d’années",
+      "note": "Anneau mythique",
+      "type": "term"
+    },
+    {
+      "zh": "等等",
+      "fr": "Attends.",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "紫极魔瞳",
+      "fr": "Pupilles Démoniaques Pourpres",
+      "note": "Technique oculaire",
+      "type": "term"
+    },
+    {
+      "zh": "老师",
+      "fr": "Maître",
+      "note": "Professeur / mentor",
+      "type": "term"
+    },
+    {
+      "zh": "蓝电霸王龙宗",
+      "fr": "Secte du Tyrannosaure Bleu Fulgurant",
+      "note": "Secte offensive",
+      "type": "term"
+    },
+    {
+      "zh": "觉醒",
+      "fr": "Éveil",
+      "note": "Cérémonie d’activation de l’esprit martial",
+      "type": "term"
+    },
+    {
+      "zh": "该死",
+      "fr": "Maudit…",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "诸葛神弩",
+      "fr": "Arbalète Divine de Zhuge",
+      "note": "Arme cachée de masse",
+      "type": "term"
+    },
+    {
+      "zh": "诺丁城",
+      "fr": "Ville de Noding",
+      "note": "Ville frontalière",
+      "type": "term"
+    },
+    {
+      "zh": "长老",
+      "fr": "Ancien",
+      "note": "Titre hiérarchique",
+      "type": "term"
+    },
+    {
+      "zh": "门规",
+      "fr": "Règles de la secte",
+      "note": "Lois internes",
+      "type": "term"
+    },
+    {
+      "zh": "闭嘴",
+      "fr": "Tais-toi.",
+      "note": "Formule figée",
+      "type": "phrase"
+    },
+    {
+      "zh": "阎王帖",
+      "fr": "Registre du Roi des Enfers",
+      "note": "Arme létale",
+      "type": "term"
+    },
+    {
+      "zh": "院长",
+      "fr": "Directeur",
+      "note": "Titre académique",
+      "type": "term"
+    },
+    {
+      "zh": "领域",
+      "fr": "Domaine",
+      "note": "Pouvoir de zone avancé",
+      "type": "term"
+    },
+    {
+      "zh": "鬼影迷踪",
+      "fr": "Pas Fantôme Égarant",
+      "note": "Technique de déplacement",
+      "type": "term"
+    },
+    {
+      "zh": "魂兽",
+      "fr": "Bête spirituelle",
+      "note": "Créature fournissant des anneaux",
+      "type": "term"
+    },
+    {
+      "zh": "魂力",
+      "fr": "Puissance spirituelle",
+      "note": "Énergie utilisée par les esprits martiaux",
+      "type": "term"
+    },
+    {
+      "zh": "魂圣",
+      "fr": "Saint de l’Âme",
+      "note": "Rang élevé (7e rang)",
+      "type": "term"
+    },
+    {
+      "zh": "魂士",
+      "fr": "Aspirant des âmes",
+      "note": "Rang 1",
+      "type": "term"
+    },
+    {
+      "zh": "魂宗",
+      "fr": "Maître des âmes supérieur",
+      "note": "Rang 5",
+      "type": "term"
+    },
+    {
+      "zh": "魂尊",
+      "fr": "Vénérable des âmes",
+      "note": "Rang 4",
+      "type": "term"
+    },
+    {
+      "zh": "魂师",
+      "fr": "Maître des âmes",
+      "note": "Utilisateur d’esprits martiaux",
+      "type": "term"
+    },
+    {
+      "zh": "魂斗罗",
+      "fr": "Douluo de l’Âme",
+      "note": "Rang 8",
+      "type": "term"
+    },
+    {
+      "zh": "魂王",
+      "fr": "Roi des âmes",
+      "note": "Rang 6",
+      "type": "term"
+    },
+    {
+      "zh": "魂环",
+      "fr": "Anneau spirituel",
+      "note": "Anneau conférant des capacités",
+      "type": "term"
+    }
+  ]
+}
