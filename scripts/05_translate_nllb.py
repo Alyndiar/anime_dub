@@ -76,7 +76,7 @@ def translate_all(
     out_json_dir = paths["whisper_json_fr_dir"]
     out_srt_dir = paths["fr_srt_dir"]
 
-    model_name = "facebook/nllb-200-1.3B"
+    model_name = "facebook/nllb-200-distilled-1.3B"
     logger.info("Chargement du modèle NLLB %s", model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to("cuda")
